@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - autoanime-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
+      - SONARR_URL=${SONARR_URL:-http://localhost:8989}
+      - SONARR_API_KEY=${SONARR_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - autoanime-network
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=autoanime
+      - POSTGRES_PASSWORD=autoanime
+      - POSTGRES_DB=autoanime
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoanime"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - autoanime-network
+
+volumes:
+  postgres_data:
+
+networks:
+  autoanime-network:
+    driver: bridge
