@@ -3,6 +3,11 @@ const { db } = require('../db/db');
 const { sonarrSeries } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
 
+const extractImageUrl = (images, coverType) => {
+  const image = images?.find(img => img.coverType === coverType);
+  return image?.remoteUrl || null;
+};
+
 const getStatus = async (req, res) => {
   try {
     const status = await sonarrService.getStatus();
@@ -51,8 +56,8 @@ const syncSeries = async (req, res) => {
             title: item.title,
             titleSlug: item.titleSlug,
             overview: item.overview,
-            posterPath: item.posterPath,
-            bannerPath: item.bannerPath,
+            posterPath: extractImageUrl(item.images, 'poster'),
+            bannerPath: extractImageUrl(item.images, 'banner'),
             network: item.network,
             airDay: item.airDay,
             airTime: item.airTime,
@@ -76,8 +81,8 @@ const syncSeries = async (req, res) => {
           title: item.title,
           titleSlug: item.titleSlug,
           overview: item.overview,
-          posterPath: item.posterPath,
-          bannerPath: item.bannerPath,
+          posterPath: extractImageUrl(item.images, 'poster'),
+          bannerPath: extractImageUrl(item.images, 'banner'),
           network: item.network,
           airDay: item.airDay,
           airTime: item.airTime,

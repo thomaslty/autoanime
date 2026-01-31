@@ -19,9 +19,7 @@ export function getStatusColor(series) {
 
 export function SeriesCard({ series, onClick }) {
   const statusColor = getStatusColor(series)
-  const posterUrl = series.posterPath
-    ? `${import.meta.env.VITE_SONARR_URL}/api/v3/mediacover/${series.sonarrId}/poster.jpg?apikey=${import.meta.env.VITE_SONARR_API_KEY}`
-    : null
+  const posterUrl = series.posterPath || null
 
   return (
     <Card
@@ -51,9 +49,9 @@ export function SeriesCard({ series, onClick }) {
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
-        <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full transition-transform group-hover:translate-y-0">
+        <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full transition-transform group-hover:translate-y-0 group-hover:text-white">
           <h3 className="text-sm font-medium line-clamp-2">{series.title}</h3>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-white/80 mt-1">
             {series.seasonCount} Season{series.seasonCount !== 1 ? 's' : ''} • {series.episodeFileCount}/{series.totalEpisodeCount} Eps
           </p>
         </div>

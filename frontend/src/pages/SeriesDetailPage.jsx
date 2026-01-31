@@ -121,9 +121,7 @@ export function SeriesDetailPage() {
     )
   }
 
-  const posterUrl = series.posterPath
-    ? `${import.meta.env.VITE_SONARR_URL}/api/v3/mediacover/${series.sonarrId}/poster.jpg?apikey=${import.meta.env.VITE_SONARR_API_KEY}`
-    : null
+  const posterUrl = series.posterPath || null
 
   return (
     <Layout>
@@ -138,7 +136,7 @@ export function SeriesDetailPage() {
 
         <div className="flex gap-8">
           <div className="flex-shrink-0">
-            <Card className="w-64 overflow-hidden">
+            <Card className="w-64 overflow-hidden py-0">
               <div className="aspect-[2/3]">
                 {posterUrl ? (
                   <img
