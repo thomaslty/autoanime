@@ -1,6 +1,7 @@
 "use client"
 
-import * as Collapsible from "@radix-ui/react-collapsible"
+import { useState } from "react"
+import { ChevronRight } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -27,6 +28,10 @@ const navItems = [
     title: "RSS Management",
     href: "/rss",
     icon: Rss,
+    items: [
+      { title: "Main Sources", href: "/rss/sources" },
+      { title: "Anime Configs", href: "/rss/anime-configs" }
+    ]
   },
   {
     title: "Settings",
@@ -38,6 +43,14 @@ const navItems = [
 function AppSidebar() {
   const location = useLocation()
   const currentPath = location.pathname
+  const [openMenus, setOpenMenus] = useState({})
+
+  const toggleMenu = (href) => {
+    setOpenMenus((prev) => ({
+      ...prev,
+      [href]: !prev[href]
+    }))
+  }
 
   return (
     <Sidebar>
@@ -52,12 +65,31 @@ function AppSidebar() {
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={currentPath === item.href}>
-                    <a href={item.href}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
+                  <button
+                    onClick={() => item.items ? toggleMenu(item.href) : null}
+                    className="flex items-center gap-2 w-full hover:bg-sidebar-accent rounded-md py-2 px-2 cursor-pointer"
+                  >
+                    <item.icon className="size-4" />
+                    <span className="font-medium text-sm">{item.title}</span>
+                    {item.items && (
+                      <ChevronRight
+                        className={`ml-auto size-4 transition-transform ${openMenus[item.href] ? "rotate-90" : ""}`}
+                      />
+                    )}
+                  </button>
+                  {item.items && openMenus[item.href] && (
+                    <SidebarMenu>
+                      {item.items.map((sub) => (
+                        <SidebarMenuItem key={sub.href}>
+                          <SidebarMenuButton asChild isActive={currentPath === sub.href}>
+                            <a href={sub.href} className="pl-5">
+                              <span>{sub.title}</span>
+                            </a>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
