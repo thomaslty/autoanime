@@ -43,7 +43,7 @@ const getAllSeries = async () => {
     'X-Api-Key': sonarrConfig.apiKey,
     'Content-Type': 'application/json'
   };
-  const apiBase = `${sonarrConfig.url}/api/v4`;
+  const apiBase = `${sonarrConfig.url}/api/v3`;
   
   const response = await fetch(`${apiBase}/series`, { headers });
   if (!response.ok) {
@@ -58,7 +58,7 @@ const getSeriesById = async (id) => {
     'X-Api-Key': sonarrConfig.apiKey,
     'Content-Type': 'application/json'
   };
-  const apiBase = `${sonarrConfig.url}/api/v4`;
+  const apiBase = `${sonarrConfig.url}/api/v3`;
   
   const response = await fetch(`${apiBase}/series/${id}`, { headers });
   if (!response.ok) {
@@ -73,7 +73,7 @@ const searchSeries = async (term) => {
     'X-Api-Key': sonarrConfig.apiKey,
     'Content-Type': 'application/json'
   };
-  const apiBase = `${sonarrConfig.url}/api/v4`;
+  const apiBase = `${sonarrConfig.url}/api/v3`;
   
   const response = await fetch(`${apiBase}/series/lookup?term=${encodeURIComponent(term)}`, { headers });
   if (!response.ok) {
@@ -88,7 +88,7 @@ const refreshSeries = async (seriesId) => {
     'X-Api-Key': sonarrConfig.apiKey,
     'Content-Type': 'application/json'
   };
-  const apiBase = `${sonarrConfig.url}/api/v4`;
+  const apiBase = `${sonarrConfig.url}/api/v3`;
   
   const response = await fetch(`${apiBase}/command`, {
     method: 'POST',
