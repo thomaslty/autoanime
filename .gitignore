@@ -38,3 +38,9 @@ temp/
 # Database
 *.sqlite
 *.sqlite3
+
+# Skills
+.agents/
+
+# Opencode
+.opencode/

@@ -1,5 +1,5 @@
 # Backend Dockerfile
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
@@ -11,6 +11,7 @@ RUN npm ci --only=production
 
 # Copy source code
 COPY src ./src
+COPY drizzle.config.js ./
 
 # Expose port
 EXPOSE 3000

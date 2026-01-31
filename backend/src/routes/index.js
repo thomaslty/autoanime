@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router();
 
-// Import route modules
 const rssRoutes = require('./rss');
 const sonarrRoutes = require('./sonarr');
+const qbittorrentRoutes = require('./qbittorrent');
 
-// Mount routes
 router.use('/rss', rssRoutes);
 router.use('/sonarr', sonarrRoutes);
+router.use('/qbittorrent', qbittorrentRoutes);
 
-// API info endpoint
 router.get('/', (req, res) => {
   res.json({
     name: 'AutoAnime API',
@@ -17,6 +16,7 @@ router.get('/', (req, res) => {
     endpoints: {
       rss: '/api/rss',
       sonarr: '/api/sonarr',
+      qbittorrent: '/api/qbittorrent',
       health: '/health'
     }
   });

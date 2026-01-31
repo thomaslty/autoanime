@@ -1,0 +1,7 @@
+- When you need to search dependency / library docs, use `context7` tools.
+- Minimal package installation. 
+  - For frontend component, use shadcn as much as possible
+  - Avoid installing new package(s) unless user explicitly allow
+- For Sonarr API, use version 4 (v4), do not use version 3 (v3)
+- Typescript is forbidden, only allows Javascript
+- For Icons, use Lucide React

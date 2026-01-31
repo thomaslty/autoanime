@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const sonarrController = require('../controllers/sonarrController');
 
-// Sonarr integration routes
 router.get('/status', sonarrController.getStatus);
 router.get('/series', sonarrController.getSeries);
-router.post('/series', sonarrController.addSeries);
+router.get('/series/:id', sonarrController.getSeriesById);
+router.post('/sync', sonarrController.syncSeries);
+router.post('/series/:id/refresh', sonarrController.triggerRefresh);
 
 module.exports = router;
