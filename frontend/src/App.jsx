@@ -1,16 +1,21 @@
-import { useState } from 'react'
-import { Button } from "@/components/ui/button"
+import { Routes, Route } from 'react-router'
+import { HomePage } from './pages/HomePage'
+import { SeriesDetailPage } from './pages/SeriesDetailPage'
+import { RSSPage } from './pages/RSSPage'
+import { RSSSourcesPage } from './pages/RSSSourcesPage'
+import { RSSAnimeConfigsPage } from './pages/RSSAnimeConfigsPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <h1 className="text-3xl font-bold underline">Hello World</h1>
-        <Button>Click me</Button>
-      </div>
-    </>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/series/:id" element={<SeriesDetailPage />} />
+      <Route path="/rss" element={<RSSPage />} />
+      <Route path="/rss/sources" element={<RSSSourcesPage />} />
+      <Route path="/rss/anime-configs" element={<RSSAnimeConfigsPage />} />
+      <Route path="/settings" element={<SettingsPage />} />
+    </Routes>
   )
 }
 
