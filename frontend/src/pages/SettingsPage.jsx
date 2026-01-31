@@ -5,62 +5,218 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { Loader2, CheckCircle, XCircle, TestTube, Eye, EyeOff } from "lucide-react"
 
 export function SettingsPage() {
   const [health, setHealth] = useState(null)
-  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState({
+    savingSonarr: false,
+    savingQbit: false,
+    testingSonarr: false,
+    testingQbit: false,
+    saving: false
+  })
+  const [showPassword, setShowPassword] = useState({
+    sonarrApiKey: false,
+    qbitPassword: false
+  })
   const [message, setMessage] = useState(null)
   const [config, setConfig] = useState({
-    qbitUrl: import.meta.env.VITE_QBITTORRENT_URL || "http://localhost:8080",
+    sonarrUrl: "",
+    sonarrApiKey: "",
+    qbitUrl: "",
+    qbitUsername: "",
+    qbitPassword: ""
+  })
+  const [originalConfig, setOriginalConfig] = useState({
+    sonarrUrl: "",
+    sonarrApiKey: "",
+    qbitUrl: "",
     qbitUsername: "",
     qbitPassword: ""
   })
 
   useEffect(() => {
-    const fetchHealth = async () => {
-      try {
-        const response = await fetch("/health")
-        const data = await response.json()
-        setHealth(data)
-      } catch (err) {
-        console.error("Error fetching health:", err)
-      }
-    }
     fetchHealth()
+    fetchSettings()
   }, [])
 
-  const handleSaveQbittorrent = async () => {
-    setSaving(true)
-    setMessage(null)
-
+  const fetchHealth = async () => {
     try {
-      const response = await fetch("/api/qbittorrent/status", {
+      const response = await fetch("/health")
+      const data = await response.json()
+      setHealth(data)
+    } catch (err) {
+      console.error("Error fetching health:", err)
+    }
+  }
+
+  const fetchSettings = async () => {
+    try {
+      const response = await fetch("/api/settings")
+      const data = await response.json()
+      if (data.success) {
+        const newConfig = {
+          sonarrUrl: data.config.sonarr.url || "",
+          sonarrApiKey: data.config.sonarr.apiKey || "",
+          qbitUrl: data.config.qbittorrent.url || "",
+          qbitUsername: data.config.qbittorrent.username || "",
+          qbitPassword: data.config.qbittorrent.password || ""
+        }
+        setConfig(newConfig)
+        setOriginalConfig(newConfig)
+      }
+    } catch (err) {
+      console.error("Error fetching settings:", err)
+      setMessage({ type: "error", text: "Failed to load settings" })
+    }
+  }
+
+  const showMessage = (type, text) => {
+    setMessage({ type, text })
+    setTimeout(() => setMessage(null), 5000)
+  }
+
+  const handleSaveSonarr = async () => {
+    setLoading(prev => ({ ...prev, savingSonarr: true }))
+    
+    try {
+      const response = await fetch("/api/settings/sonarr", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: config.sonarrUrl,
+          apiKey: config.sonarrApiKey.includes("•") ? undefined : config.sonarrApiKey
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        showMessage("success", "Sonarr configuration saved successfully")
+        setOriginalConfig(prev => ({ ...prev, sonarrUrl: config.sonarrUrl }))
+        fetchHealth()
+      } else {
+        showMessage("error", data.error || "Failed to save Sonarr configuration")
+      }
+    } catch (err) {
+      showMessage("error", err.message)
+    } finally {
+      setLoading(prev => ({ ...prev, savingSonarr: false }))
+    }
+  }
+
+  const handleTestSonarr = async () => {
+    setLoading(prev => ({ ...prev, testingSonarr: true }))
+    
+    try {
+      const response = await fetch("/api/settings/sonarr/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: config.sonarrUrl,
+          apiKey: config.sonarrApiKey.includes("•") ? undefined : config.sonarrApiKey
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.connected) {
+        showMessage("success", `Sonarr connection successful (${data.version})`)
+      } else {
+        showMessage("error", data.error || "Sonarr connection failed")
+      }
+    } catch (err) {
+      showMessage("error", err.message)
+    } finally {
+      setLoading(prev => ({ ...prev, testingSonarr: false }))
+    }
+  }
+
+  const handleSaveQbittorrent = async () => {
+    setLoading(prev => ({ ...prev, savingQbit: true }))
+    
+    try {
+      const response = await fetch("/api/settings/qbittorrent", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: config.qbitUrl,
+          username: config.qbitUsername,
+          password: config.qbitPassword.includes("•") ? undefined : config.qbitPassword
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        showMessage("success", "qBittorrent configuration saved successfully")
+        setOriginalConfig(prev => ({ 
+          ...prev, 
+          qbitUrl: config.qbitUrl,
+          qbitUsername: config.qbitUsername
+        }))
+        fetchHealth()
+      } else {
+        showMessage("error", data.error || "Failed to save qBittorrent configuration")
+      }
+    } catch (err) {
+      showMessage("error", err.message)
+    } finally {
+      setLoading(prev => ({ ...prev, savingQbit: false }))
+    }
+  }
+
+  const handleTestQbittorrent = async () => {
+    setLoading(prev => ({ ...prev, testingQbit: true }))
+    
+    try {
+      const response = await fetch("/api/settings/qbittorrent/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: config.qbitUrl,
           username: config.qbitUsername,
-          password: config.qbitPassword
+          password: config.qbitPassword.includes("•") ? undefined : config.qbitPassword
         })
       })
 
-      if (!response.ok) throw new Error("Failed to save configuration")
-
-      setMessage({ type: "success", text: "Configuration saved successfully" })
+      const data = await response.json()
+      
+      if (data.connected) {
+        showMessage("success", `qBittorrent connection successful (${data.version})`)
+      } else {
+        showMessage("error", data.error || "qBittorrent connection failed")
+      }
     } catch (err) {
-      setMessage({ type: "error", text: err.message })
+      showMessage("error", err.message)
     } finally {
-      setSaving(false)
+      setLoading(prev => ({ ...prev, testingQbit: false }))
     }
   }
 
+  const isSonarrChanged = config.sonarrUrl !== originalConfig.sonarrUrl || 
+                         (config.sonarrApiKey && !config.sonarrApiKey.includes("•"))
+  const isQbitChanged = config.qbitUrl !== originalConfig.qbitUrl || 
+                        config.qbitUsername !== originalConfig.qbitUsername ||
+                        (config.qbitPassword && !config.qbitPassword.includes("•"))
+
   return (
     <Layout>
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6 max-w-4xl">
         <h2 className="text-2xl font-bold">Settings</h2>
 
         {message && (
-          <div className={`p-4 rounded-lg ${message.type === "success" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100" : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"}`}>
+          <div className={`p-4 rounded-lg flex items-center gap-2 ${
+            message.type === "success" 
+              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100" 
+              : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+          }`}>
+            {message.type === "success" ? (
+              <CheckCircle className="h-5 w-5" />
+            ) : (
+              <XCircle className="h-5 w-5" />
+            )}
             {message.text}
           </div>
         )}
@@ -97,60 +253,158 @@ export function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Sonarr Configuration</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              Sonarr Configuration
+              {isSonarrChanged && (
+                <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                  Unsaved changes
+                </Badge>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Sonarr URL</Label>
+              <Label htmlFor="sonarrUrl">Sonarr URL</Label>
               <Input
-                value={import.meta.env.VITE_SONARR_URL || "http://localhost:8989"}
-                readOnly
+                id="sonarrUrl"
+                value={config.sonarrUrl}
+                onChange={(e) => setConfig({ ...config, sonarrUrl: e.target.value })}
+                placeholder="http://localhost:8989"
               />
             </div>
             <div className="space-y-2">
-              <Label>API Key</Label>
-              <Input
-                type="password"
-                value={import.meta.env.VITE_SONARR_API_KEY ? "••••••••" : ""}
-                readOnly
-              />
+              <Label htmlFor="sonarrApiKey">API Key</Label>
+              <div className="relative">
+                <Input
+                  id="sonarrApiKey"
+                  type={showPassword.sonarrApiKey ? "text" : "password"}
+                  value={config.sonarrApiKey}
+                  onChange={(e) => setConfig({ ...config, sonarrApiKey: e.target.value })}
+                  placeholder="Enter Sonarr API key"
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-9 w-9 px-0"
+                  onClick={() => setShowPassword(prev => ({ ...prev, sonarrApiKey: !prev.sonarrApiKey }))}
+                >
+                  {showPassword.sonarrApiKey ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button 
+                onClick={handleTestSonarr} 
+                disabled={loading.testingSonarr || !config.sonarrUrl}
+                variant="outline"
+              >
+                {loading.testingSonarr ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <TestTube className="h-4 w-4 mr-2" />
+                )}
+                Test Connection
+              </Button>
+              <Button 
+                onClick={handleSaveSonarr} 
+                disabled={loading.savingSonarr || (!isSonarrChanged && !config.sonarrUrl)}
+              >
+                {loading.savingSonarr ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Save Configuration"
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>qBittorrent Configuration</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              qBittorrent Configuration
+              {isQbitChanged && (
+                <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                  Unsaved changes
+                </Badge>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>qBittorrent URL</Label>
+              <Label htmlFor="qbitUrl">qBittorrent URL</Label>
               <Input
+                id="qbitUrl"
                 value={config.qbitUrl}
                 onChange={(e) => setConfig({ ...config, qbitUrl: e.target.value })}
                 placeholder="http://localhost:8080"
               />
             </div>
             <div className="space-y-2">
-              <Label>Username</Label>
+              <Label htmlFor="qbitUsername">Username</Label>
               <Input
+                id="qbitUsername"
                 value={config.qbitUsername}
                 onChange={(e) => setConfig({ ...config, qbitUsername: e.target.value })}
                 placeholder="admin"
               />
             </div>
             <div className="space-y-2">
-              <Label>Password</Label>
-              <Input
-                type="password"
-                value={config.qbitPassword}
-                onChange={(e) => setConfig({ ...config, qbitPassword: e.target.value })}
-                placeholder="••••••••"
-              />
+              <Label htmlFor="qbitPassword">Password</Label>
+              <div className="relative">
+                <Input
+                  id="qbitPassword"
+                  type={showPassword.qbitPassword ? "text" : "password"}
+                  value={config.qbitPassword}
+                  onChange={(e) => setConfig({ ...config, qbitPassword: e.target.value })}
+                  placeholder="••••••••"
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-9 w-9 px-0"
+                  onClick={() => setShowPassword(prev => ({ ...prev, qbitPassword: !prev.qbitPassword }))}
+                >
+                  {showPassword.qbitPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
-            <Button onClick={handleSaveQbittorrent} disabled={saving}>
-              {saving ? "Saving..." : "Save Configuration"}
-            </Button>
+            <div className="flex gap-2 pt-2">
+              <Button 
+                onClick={handleTestQbittorrent} 
+                disabled={loading.testingQbit || !config.qbitUrl || !config.qbitUsername}
+                variant="outline"
+              >
+                {loading.testingQbit ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <TestTube className="h-4 w-4 mr-2" />
+                )}
+                Test Connection
+              </Button>
+              <Button 
+                onClick={handleSaveQbittorrent} 
+                disabled={loading.savingQbit || (!isQbitChanged && !config.qbitUrl)}
+              >
+                {loading.savingQbit ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Save Configuration"
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

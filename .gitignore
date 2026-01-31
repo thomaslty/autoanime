@@ -44,3 +44,6 @@ temp/
 
 # Opencode
 .opencode/
+
+# Sonarr
+sonarr/

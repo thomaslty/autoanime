@@ -1,25 +1,30 @@
-const fetch = require('node-fetch');
-
-const QBIT_URL = process.env.QBITTORRENT_URL || 'http://localhost:8080';
-const QBIT_USER = process.env.QBITTORRENT_USERNAME || 'admin';
-const QBIT_PASS = process.env.QBITTORRENT_PASSWORD || 'adminadmin';
-
-const API_BASE = `${QBIT_URL}/api/v2`;
+const configService = require('./configService');
 
 let cookie = null;
+let currentConfig = null;
 
-const getHeaders = () => ({
+const getQbitConfig = async () => {
+  const config = await configService.getConfig();
+  return config.qbittorrent;
+};
+
+const getApiBase = (url) => `${url}/api/v2`;
+
+const getHeaders = (url) => ({
   'Content-Type': 'application/x-www-form-urlencoded',
   'Cookie': cookie || '',
-  'Referer': QBIT_URL
+  'Referer': url
 });
 
 const login = async () => {
   try {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `username=${encodeURIComponent(QBIT_USER)}&password=${encodeURIComponent(QBIT_PASS)}`
+      body: `username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`
     });
 
     if (!response.ok) {
@@ -30,6 +35,8 @@ const login = async () => {
     if (setCookie) {
       cookie = setCookie.split(';')[0];
     }
+    
+    currentConfig = { ...config };
 
     return { success: true, message: 'Logged in successfully' };
   } catch (error) {
@@ -38,7 +45,15 @@ const login = async () => {
 };
 
 const ensureLogin = async () => {
-  if (!cookie) {
+  const config = await getQbitConfig();
+  
+  const configChanged = currentConfig && 
+    (currentConfig.url !== config.url || 
+     currentConfig.username !== config.username || 
+     currentConfig.password !== config.password);
+  
+  if (!cookie || configChanged) {
+    cookie = null;
     const result = await login();
     if (!result.success) {
       throw new Error(result.message);
@@ -49,36 +64,61 @@ const ensureLogin = async () => {
 const getConnectionStatus = async () => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/app/version`, {
-      headers: getHeaders()
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/app/version`, {
+      headers: getHeaders(config.url)
     });
 
     if (!response.ok) {
-      return { connected: false, message: `API error: ${response.status}` };
+      return { 
+        connected: false, 
+        message: `API error: ${response.status}`,
+        url: config.url
+      };
     }
 
     const version = await response.text();
+    
+    // Validate that response looks like a qBittorrent version, not HTML
+    if (version.includes('<!DOCTYPE') || version.includes('<html') || version.length > 100) {
+      return { 
+        connected: false, 
+        message: 'Invalid response - received HTML instead of version. Check qBittorrent URL configuration.',
+        url: config.url
+      };
+    }
+    
     return {
       connected: true,
       message: 'Connected to qBittorrent',
+      url: config.url,
       version: version
     };
   } catch (error) {
-    return { connected: false, message: `Connection failed: ${error.message}` };
+    const config = await getQbitConfig();
+    return { 
+      connected: false, 
+      message: `Connection failed: ${error.message}`,
+      url: config.url
+    };
   }
 };
 
 const addMagnet = async (magnet, category = 'autoanime') => {
   try {
     await ensureLogin();
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
 
     const formData = new URLSearchParams();
     formData.append('urls', magnet);
     formData.append('category', category);
 
-    const response = await fetch(`${API_BASE}/torrents/add`, {
+    const response = await fetch(`${apiBase}/torrents/add`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: formData
     });
 
@@ -95,8 +135,11 @@ const addMagnet = async (magnet, category = 'autoanime') => {
 const getTorrents = async () => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/info`, {
-      headers: getHeaders()
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/info`, {
+      headers: getHeaders(config.url)
     });
 
     if (!response.ok) {
@@ -113,8 +156,11 @@ const getTorrents = async () => {
 const getTorrentByHash = async (hash) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/info?hashes=${hash}`, {
-      headers: getHeaders()
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/info?hashes=${hash}`, {
+      headers: getHeaders(config.url)
     });
 
     if (!response.ok) {
@@ -132,9 +178,12 @@ const getTorrentByHash = async (hash) => {
 const pauseTorrent = async (hash) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/pause`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/pause`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `hashes=${hash}`
     });
     return { success: response.ok };
@@ -146,9 +195,12 @@ const pauseTorrent = async (hash) => {
 const resumeTorrent = async (hash) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/resume`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/resume`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `hashes=${hash}`
     });
     return { success: response.ok };
@@ -160,9 +212,12 @@ const resumeTorrent = async (hash) => {
 const deleteTorrent = async (hash, deleteFiles = false) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/delete`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/delete`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `hashes=${hash}&deleteFiles=${deleteFiles}`
     });
     return { success: response.ok };
@@ -174,8 +229,11 @@ const deleteTorrent = async (hash, deleteFiles = false) => {
 const getCategories = async () => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/categories`, {
-      headers: getHeaders()
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/categories`, {
+      headers: getHeaders(config.url)
     });
 
     if (!response.ok) {
@@ -192,9 +250,12 @@ const getCategories = async () => {
 const createCategory = async (name, savePath) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/addCategory`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/addCategory`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `category=${encodeURIComponent(name)}&savePath=${encodeURIComponent(savePath)}`
     });
     return { success: response.ok };
@@ -206,9 +267,12 @@ const createCategory = async (name, savePath) => {
 const setTorrentLocation = async (hash, location) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/setLocation`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/setLocation`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `hashes=${hash}&location=${encodeURIComponent(location)}`
     });
     return { success: response.ok };
@@ -220,9 +284,12 @@ const setTorrentLocation = async (hash, location) => {
 const renameFile = async (hash, filePath, newName) => {
   try {
     await ensureLogin();
-    const response = await fetch(`${API_BASE}/torrents/renameFile`, {
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+    
+    const response = await fetch(`${apiBase}/torrents/renameFile`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: getHeaders(config.url),
       body: `hash=${hash}&oldPath=${encodeURIComponent(filePath)}&newPath=${encodeURIComponent(newName)}`
     });
     return { success: response.ok };

@@ -1,42 +1,51 @@
-const fetch = require('node-fetch');
+const configService = require('./configService');
 
-const SONARR_URL = process.env.SONARR_URL || 'http://localhost:8989';
-const SONARR_API_KEY = process.env.SONARR_API_KEY || '';
-const SONARR_API_BASE = `${SONARR_URL}/api/v4`;
-
-const headers = {
-  'X-Api-Key': SONARR_API_KEY,
-  'Content-Type': 'application/json'
+const getSonarrConfig = async () => {
+  const config = await configService.getConfig();
+  return config.sonarr;
 };
 
 const getStatus = async () => {
   try {
-    const response = await fetch(`${SONARR_URL}/api/v3/system/status`, { headers });
+    const sonarrConfig = await getSonarrConfig();
+    const headers = {
+      'X-Api-Key': sonarrConfig.apiKey,
+      'Content-Type': 'application/json'
+    };
+    
+    const response = await fetch(`${sonarrConfig.url}/api/v3/system/status`, { headers });
     if (!response.ok) {
       return {
         connected: false,
         message: `Sonarr API error: ${response.status}`,
-        url: SONARR_URL
+        url: sonarrConfig.url
       };
     }
     const data = await response.json();
     return {
       connected: true,
       message: 'Connected to Sonarr',
-      url: SONARR_URL,
+      url: sonarrConfig.url,
       version: data.version
     };
   } catch (error) {
     return {
       connected: false,
       message: `Connection failed: ${error.message}`,
-      url: SONARR_URL
+      url: (await getSonarrConfig()).url
     };
   }
 };
 
 const getAllSeries = async () => {
-  const response = await fetch(`${SONARR_API_BASE}/series`, { headers });
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v4`;
+  
+  const response = await fetch(`${apiBase}/series`, { headers });
   if (!response.ok) {
     throw new Error(`Sonarr API error: ${response.status}`);
   }
@@ -44,7 +53,14 @@ const getAllSeries = async () => {
 };
 
 const getSeriesById = async (id) => {
-  const response = await fetch(`${SONARR_API_BASE}/series/${id}`, { headers });
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v4`;
+  
+  const response = await fetch(`${apiBase}/series/${id}`, { headers });
   if (!response.ok) {
     throw new Error(`Sonarr API error: ${response.status}`);
   }
@@ -52,7 +68,14 @@ const getSeriesById = async (id) => {
 };
 
 const searchSeries = async (term) => {
-  const response = await fetch(`${SONARR_API_BASE}/series/lookup?term=${encodeURIComponent(term)}`, { headers });
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v4`;
+  
+  const response = await fetch(`${apiBase}/series/lookup?term=${encodeURIComponent(term)}`, { headers });
   if (!response.ok) {
     throw new Error(`Sonarr API error: ${response.status}`);
   }
@@ -60,7 +83,14 @@ const searchSeries = async (term) => {
 };
 
 const refreshSeries = async (seriesId) => {
-  const response = await fetch(`${SONARR_API_BASE}/command`, {
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v4`;
+  
+  const response = await fetch(`${apiBase}/command`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ name: 'RefreshSeries', seriesId })

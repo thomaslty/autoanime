@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const { db } = require('../db/db');
 const { rssSources, rssFeedItems } = require('../db/schema');
 const { eq, sql } = require('drizzle-orm');

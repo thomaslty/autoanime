@@ -14,13 +14,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    network_mode: "host"
+    restart: unless-stopped
+#    network_mode: "host"
 
   adminer:
     image: adminer
     ports:
       - "8080:8080"
-    network_mode: "host"
+    restart: unless-stopped
+#    network_mode: "host"
 
 volumes:
   postgres_data:

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronRight } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ChevronRight, Circle, Wifi, WifiOff } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -25,6 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 const navItems = [
   {
@@ -53,6 +54,23 @@ function AppSidebar() {
   const navigate = useNavigate()
   const currentPath = location.pathname
   const [openMenus, setOpenMenus] = useState({})
+  const [health, setHealth] = useState(null)
+
+  useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const response = await fetch("/health")
+        const data = await response.json()
+        setHealth(data)
+      } catch (err) {
+        console.error("Error fetching health:", err)
+      }
+    }
+    fetchHealth()
+    
+    const interval = setInterval(fetchHealth, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const toggleMenu = (href) => {
     setOpenMenus((prev) => ({
@@ -120,7 +138,57 @@ function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter />
+      <SidebarFooter className="p-4 group-data-[collapsible=icon]:hidden">
+        <TooltipProvider>
+          <div className="space-y-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {health?.sonarr?.connected ? (
+                    <Wifi className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <WifiOff className="h-3 w-3 text-red-500" />
+                  )}
+                  <span className="truncate">Sonarr</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{health?.sonarr?.connected ? `Connected (${health.sonarr.version || ''})` : 'Disconnected'}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {health?.qbittorrent?.connected ? (
+                    <Wifi className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <WifiOff className="h-3 w-3 text-red-500" />
+                  )}
+                  <span className="truncate">qBittorrent</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{health?.qbittorrent?.connected ? `Connected (${health.qbittorrent.version || ''})` : 'Disconnected'}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {health?.database === 'connected' ? (
+                    <Circle className="h-3 w-3 text-green-500 fill-green-500" />
+                  ) : (
+                    <Circle className="h-3 w-3 text-red-500 fill-red-500" />
+                  )}
+                  <span className="truncate">Database</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{health?.database === 'connected' ? 'Connected' : 'Disconnected'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
+      </SidebarFooter>
     </Sidebar>
   )
 }

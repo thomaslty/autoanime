@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search } from "lucide-react"
+import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search, Settings, AlertCircle, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -9,16 +10,19 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "../lib/utils"
 
 export function RSSSourcesPage() {
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [health, setHealth] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [editingSource, setEditingSource] = useState(null)
   const [formData, setFormData] = useState({ name: "", url: "", isEnabled: true })
   const [searchTerm, setSearchTerm] = useState("")
+  const navigate = useNavigate()
 
   const fetchSources = async () => {
     try {
@@ -36,8 +40,40 @@ export function RSSSourcesPage() {
   }
 
   useEffect(() => {
+    fetchHealth()
     fetchSources()
   }, [])
+
+  const fetchHealth = async () => {
+    try {
+      const response = await fetch("/health")
+      if (response.ok) {
+        const data = await response.json()
+        setHealth(data)
+      }
+    } catch (err) {
+      console.error("Error fetching health:", err)
+    }
+  }
+
+  const getServiceError = () => {
+    if (!health) return null
+    if (!health.sonarr?.connected) {
+      return {
+        title: "Sonarr Not Configured",
+        message: health.sonarr?.error || "Sonarr is not configured or unreachable. RSS sources management requires Sonarr to be properly configured.",
+        service: "Sonarr"
+      }
+    }
+    if (!health.qbittorrent?.connected) {
+      return {
+        title: "qBittorrent Not Configured",
+        message: health.qbittorrent?.error || "qBittorrent is not configured or unreachable. Some RSS features may be limited.",
+        service: "qBittorrent"
+      }
+    }
+    return null
+  }
 
   const handleSave = async () => {
     try {
@@ -100,12 +136,31 @@ export function RSSSourcesPage() {
     s.url.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const serviceError = getServiceError()
+
   return (
     <Layout>
       <div className="p-6 space-y-6">
         <h2 className="text-2xl font-bold">RSS Sources</h2>
 
-        {error && (
+        {serviceError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle className="flex items-center gap-2">
+              <WifiOff className="h-4 w-4" />
+              {serviceError.title}
+            </AlertTitle>
+            <AlertDescription className="mt-2">
+              <p className="mb-4">{serviceError.message}</p>
+              <Button onClick={() => navigate("/settings")} variant="outline" size="sm">
+                <Settings className="h-4 w-4 mr-2" />
+                Configure Now
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {error && !serviceError && (
           <div className="bg-destructive/20 border border-destructive/50 text-destructive px-4 py-2 rounded-lg">
             Error: {error}
           </div>

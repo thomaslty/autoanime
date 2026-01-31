@@ -1,5 +1,16 @@
 const { pgTable, serial, text, varchar, boolean, timestamp, integer, jsonb, index, bigint, numeric, foreignKey } = require('drizzle-orm/pg-core');
 
+const settings = pgTable('settings', {
+  id: serial('id').primaryKey(),
+  key: varchar('key', { length: 255 }).notNull().unique(),
+  value: text('value'),
+  isEncrypted: boolean('is_encrypted').default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_settings_key').on(table.key),
+]);
+
 const sonarrSeries = pgTable('sonarr_series', {
   id: serial('id').primaryKey(),
   sonarrId: integer('sonarr_id').notNull().unique(),
@@ -100,5 +111,6 @@ module.exports = {
   rssSources,
   rssAnimeConfigs,
   rssFeedItems,
-  qbittorrentDownloads
+  qbittorrentDownloads,
+  settings
 };

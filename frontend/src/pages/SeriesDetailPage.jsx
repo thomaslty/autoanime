@@ -1,17 +1,32 @@
 import { useState, useEffect } from "react"
-import { useParams, Link } from "react-router"
+import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { ArrowLeft, RefreshCw } from "lucide-react"
+import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export function SeriesDetailPage() {
   const { id } = useParams()
   const [series, setSeries] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [health, setHealth] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
+    const fetchHealth = async () => {
+      try {
+        const response = await fetch("/health")
+        if (response.ok) {
+          const data = await response.json()
+          setHealth(data)
+        }
+      } catch (err) {
+        console.error("Error fetching health:", err)
+      }
+    }
+
     const fetchSeries = async () => {
       try {
         setLoading(true)
@@ -27,8 +42,22 @@ export function SeriesDetailPage() {
         setLoading(false)
       }
     }
+
+    fetchHealth()
     fetchSeries()
   }, [id])
+
+  const getServiceError = () => {
+    if (!health) return null
+    if (!health.sonarr?.connected) {
+      return {
+        title: "Sonarr Not Configured",
+        message: health.sonarr?.error || "Sonarr is not configured or unreachable. Please configure your Sonarr connection to view series details.",
+        service: "Sonarr"
+      }
+    }
+    return null
+  }
 
   const handleRefresh = async () => {
     try {
@@ -38,11 +67,43 @@ export function SeriesDetailPage() {
     }
   }
 
+  const serviceError = getServiceError()
+
   if (loading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-screen text-muted-foreground">
           Loading...
+        </div>
+      </Layout>
+    )
+  }
+
+  if (serviceError) {
+    return (
+      <Layout>
+        <div className="p-6">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
+          >
+            <ArrowLeft size={20} />
+            <span>Back to Library</span>
+          </Link>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle className="flex items-center gap-2">
+              <WifiOff className="h-4 w-4" />
+              {serviceError.title}
+            </AlertTitle>
+            <AlertDescription className="mt-2">
+              <p className="mb-4">{serviceError.message}</p>
+              <Button onClick={() => navigate("/settings")} variant="outline" size="sm">
+                <Settings className="h-4 w-4 mr-2" />
+                Configure Now
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       </Layout>
     )
