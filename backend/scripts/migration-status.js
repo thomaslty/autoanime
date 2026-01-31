@@ -100,19 +100,21 @@ async function getAppliedMigrations() {
   });
 
   try {
+    // Drizzle ORM stores migrations in drizzle.__drizzle_migrations, not public.drizzle_migrations
     const checkTable = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'drizzle_migrations'
+        WHERE table_schema = 'drizzle' 
+        AND table_name = '__drizzle_migrations'
       )
     `);
-    
+
     if (!checkTable.rows[0].exists) {
+      await pool.end();
       return [];
     }
 
-    const result = await pool.query('SELECT hash, created_at FROM drizzle_migrations ORDER BY created_at');
+    const result = await pool.query('SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at');
     await pool.end();
     return result.rows;
   } catch (error) {
@@ -173,10 +175,12 @@ async function main() {
   if (journal.length === 0) {
     log.warn('No migrations found in journal');
   } else {
-    journal.forEach(entry => {
-      const isApplied = applied.some(a => a.hash === entry.tag);
-      const status = isApplied 
-        ? `${colors.green}[APPLIED]${colors.reset}` 
+    // Drizzle stores SHA-256 hashes of SQL content, not tag names
+    // Migrations are applied in order, so we match by index
+    journal.forEach((entry, index) => {
+      const isApplied = index < applied.length;
+      const status = isApplied
+        ? `${colors.green}[APPLIED]${colors.reset}`
         : `${colors.yellow}[PENDING]${colors.reset}`;
       const date = new Date(entry.when).toLocaleString();
       console.log(`  ${status} ${entry.tag}`);
@@ -185,31 +189,26 @@ async function main() {
   }
 
   console.log(`\n${colors.bright}Applied Migrations in DB:${colors.reset} ${applied.length}/${journal.length}`);
-  
+
+  const pending = journal.length - applied.length;
+  const isFullyUpToDate = pending === 0 && journal.length > 0;
+
   console.log(`\n${colors.bright}Database Tables:${colors.reset}`);
   if (tables.length === 0) {
     log.warn('No tables found - migrations may not have been run');
   } else {
     tables.forEach(table => {
-      const isSettings = table === 'settings';
-      const color = isSettings ? colors.green : colors.dim;
+      // Show tables in green when schema is fully up to date, otherwise dim
+      const color = isFullyUpToDate ? colors.green : colors.dim;
       console.log(`  ${color}• ${table}${colors.reset}`);
     });
   }
 
-  const pending = journal.length - applied.length;
   console.log(`\n${colors.bright}Summary:${colors.reset}`);
   if (pending > 0) {
     log.warn(`${pending} migration(s) pending - run 'npm run db:migrate' to apply`);
   } else if (journal.length > 0) {
     log.success('All migrations are up to date!');
-  }
-
-  // Check for specific tables
-  if (!tables.includes('settings')) {
-    console.log();
-    log.error('WARNING: settings table is missing!');
-    log.info('You need to run: npm run db:migrate');
   }
 
   console.log();

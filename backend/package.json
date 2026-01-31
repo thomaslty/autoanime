@@ -10,7 +10,8 @@
     "db:migrate": "node scripts/migrate.js",
     "db:migrate:raw": "drizzle-kit migrate",
     "db:status": "node scripts/migration-status.js",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:reset": "node scripts/db-reset.js"
   },
   "keywords": [
     "anime",
