@@ -6,7 +6,7 @@ import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, CheckCi
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 
 const AutoDownloadStatus = {
   DISABLED: 0,
@@ -279,7 +279,7 @@ export function SeriesDetailPage() {
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 mr-4">
                   <span className="text-sm text-muted-foreground">Auto Download</span>
-                  <Checkbox
+                  <Switch
                     checked={isAutoDownloadEnabled}
                     onCheckedChange={handleToggleSeriesAutoDownload}
                   />

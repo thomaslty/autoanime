@@ -3,11 +3,14 @@ const { settings } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const crypto = require('crypto');
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
 const ALGORITHM = 'aes-256-gcm';
 
 const encrypt = (text) => {
   if (!text) return null;
+  if (!ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY is not defined');
+  }
   try {
     const iv = crypto.randomBytes(16);
     const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
@@ -27,11 +30,11 @@ const decrypt = (encryptedText) => {
   try {
     const parts = encryptedText.split(':');
     if (parts.length !== 3) return encryptedText;
-    
+
     const iv = Buffer.from(parts[0], 'hex');
     const authTag = Buffer.from(parts[1], 'hex');
     const encrypted = parts[2];
-    
+
     const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
     const decipher = crypto.createDecipheriv(ALGORITHM, keyBuffer, iv);
     if (decipher.setAuthTag) {
@@ -64,9 +67,9 @@ const getSetting = async (key) => {
     const result = await db.select().from(settings).where(eq(settings.key, key));
     if (result.length > 0) {
       const setting = result[0];
-      if (setting.isEncrypted) {
-        return decrypt(setting.value);
-      }
+      // if (setting.isEncrypted) {
+      //   return decrypt(setting.value);
+      // }
       return setting.value;
     }
     return null;
@@ -86,17 +89,17 @@ const getSettingWithFallback = async (key, envVarName) => {
 
 const setSetting = async (key, value, shouldEncrypt = null) => {
   try {
-    const encrypted = shouldEncrypt !== null 
-      ? shouldEncrypt 
+    const encrypted = shouldEncrypt !== null
+      ? shouldEncrypt
       : isSensitive(key);
-    
-    const valueToStore = encrypted ? encrypt(value) : value;
+
+    const valueToStore = value;
     const existing = await db.select().from(settings).where(eq(settings.key, key));
-    
+
     if (existing.length > 0) {
       await db.update(settings)
-        .set({ 
-          value: valueToStore, 
+        .set({
+          value: valueToStore,
           isEncrypted: encrypted,
           updatedAt: new Date()
         })
@@ -110,7 +113,7 @@ const setSetting = async (key, value, shouldEncrypt = null) => {
         updatedAt: new Date()
       });
     }
-    
+
     return { success: true };
   } catch (error) {
     console.error(`Error setting ${key}:`, error.message);
@@ -123,9 +126,10 @@ const getAllSettings = async () => {
     const allSettings = await db.select().from(settings);
     return allSettings.map(setting => ({
       key: setting.key,
-      value: setting.isEncrypted 
-        ? maskValue(decrypt(setting.value))
-        : setting.value,
+      // value: setting.isEncrypted
+      //   ? maskValue(decrypt(setting.value))
+      //   : setting.value,
+      value: setting.value,
       isEncrypted: setting.isEncrypted,
       updatedAt: setting.updatedAt
     }));

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import { ChevronDown, CheckCircle2, Clock, AlertCircle, FileVideo, Eye, Download, XCircle, SkipForward } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -110,7 +110,7 @@ function EpisodeRow({ episode, seriesId, onToggleAutoDownload }) {
         </div>
         <div className="flex items-center gap-1">
           <span className="text-xs text-muted-foreground">Auto</span>
-          <Checkbox
+          <Switch
             checked={isAutoDownloadEnabled}
             onCheckedChange={(checked) => onToggleAutoDownload(episode.id, checked)}
           />
@@ -184,7 +184,7 @@ export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownl
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <Checkbox
+                  <Switch
                     checked={isAutoDownloadEnabled}
                     onCheckedChange={(checked) => onToggleSeasonAutoDownload(season.seasonNumber, checked)}
                     onClick={(e) => e.stopPropagation()}

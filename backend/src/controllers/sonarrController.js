@@ -15,105 +15,146 @@ const parseTimestamp = (dateString) => {
   return isNaN(date.getTime()) ? null : date;
 };
 
-const syncSeriesImages = async (seriesId, images, now) => {
+const upsertSeriesImages = async (seriesId, images, now) => {
   if (!images || images.length === 0) return;
-  
-  await db.delete(seriesImages).where(eq(seriesImages.seriesId, seriesId));
-  
-  const imageRecords = images.map(img => ({
-    seriesId: seriesId,
-    coverType: img.coverType,
-    url: img.url,
-    remoteUrl: img.remoteUrl,
-    createdAt: now,
-    updatedAt: now
-  }));
-  
-  if (imageRecords.length > 0) {
-    await db.insert(seriesImages).values(imageRecords);
+
+  const existingImages = await db.select().from(seriesImages).where(eq(seriesImages.seriesId, seriesId));
+  const existingMap = new Map(existingImages.map(img => [img.coverType, img]));
+
+  for (const img of images) {
+    const metadataUpdate = {
+      url: img.url,
+      remoteUrl: img.remoteUrl,
+      updatedAt: now
+    };
+
+    if (existingMap.has(img.coverType)) {
+      await db.update(seriesImages)
+        .set(metadataUpdate)
+        .where(eq(seriesImages.id, existingMap.get(img.coverType).id));
+    } else {
+      await db.insert(seriesImages).values({
+        seriesId,
+        coverType: img.coverType,
+        ...metadataUpdate,
+        createdAt: now
+      });
+    }
   }
 };
 
-const syncAlternateTitles = async (seriesId, alternateTitles, now) => {
+const upsertAlternateTitles = async (seriesId, alternateTitles, now) => {
   if (!alternateTitles || alternateTitles.length === 0) return;
-  
-  await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, seriesId));
-  
-  const titleRecords = alternateTitles.map(alt => ({
-    seriesId: seriesId,
-    title: alt.title,
-    sceneSeasonNumber: alt.sceneSeasonNumber,
-    createdAt: now,
-    updatedAt: now
-  }));
-  
-  if (titleRecords.length > 0) {
-    await db.insert(seriesAlternateTitles).values(titleRecords);
+
+  const existingTitles = await db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, seriesId));
+  const existingMap = new Map(existingTitles.map(t => [t.title, t]));
+
+  for (const alt of alternateTitles) {
+    const metadataUpdate = {
+      sceneSeasonNumber: alt.sceneSeasonNumber,
+      updatedAt: now
+    };
+
+    if (existingMap.has(alt.title)) {
+      await db.update(seriesAlternateTitles)
+        .set(metadataUpdate)
+        .where(eq(seriesAlternateTitles.id, existingMap.get(alt.title).id));
+    } else {
+      await db.insert(seriesAlternateTitles).values({
+        seriesId,
+        title: alt.title,
+        ...metadataUpdate,
+        createdAt: now
+      });
+    }
   }
 };
 
-const syncSeasons = async (seriesId, seasons, now) => {
+const upsertSeasons = async (seriesId, seasons, now) => {
   if (!seasons || seasons.length === 0) return;
-  
-  await db.delete(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
-  
-  const seasonRecords = seasons.map(season => ({
-    seriesId: seriesId,
-    seasonNumber: season.seasonNumber,
-    monitored: season.monitored,
-    episodeCount: season.statistics?.episodeCount,
-    episodeFileCount: season.statistics?.episodeFileCount,
-    totalEpisodeCount: season.statistics?.totalEpisodeCount,
-    sizeOnDisk: season.statistics?.sizeOnDisk,
-    percentOfEpisodes: season.statistics?.percentOfEpisodes,
-    nextAiring: parseTimestamp(season.statistics?.nextAiring),
-    previousAiring: parseTimestamp(season.statistics?.previousAiring),
-    createdAt: now,
-    updatedAt: now
-  }));
-  
-  if (seasonRecords.length > 0) {
-    await db.insert(seriesSeasons).values(seasonRecords);
+
+  for (const season of seasons) {
+    const existing = await db.select().from(seriesSeasons).where(
+      and(
+        eq(seriesSeasons.seriesId, seriesId),
+        eq(seriesSeasons.seasonNumber, season.seasonNumber)
+      )
+    );
+
+    // Metadata fields only (preserve auto-download fields)
+    const metadataUpdate = {
+      monitored: season.monitored,
+      episodeCount: season.statistics?.episodeCount,
+      episodeFileCount: season.statistics?.episodeFileCount,
+      totalEpisodeCount: season.statistics?.totalEpisodeCount,
+      sizeOnDisk: season.statistics?.sizeOnDisk,
+      percentOfEpisodes: season.statistics?.percentOfEpisodes,
+      nextAiring: parseTimestamp(season.statistics?.nextAiring),
+      previousAiring: parseTimestamp(season.statistics?.previousAiring),
+      updatedAt: now
+    };
+
+    if (existing.length > 0) {
+      await db.update(seriesSeasons).set(metadataUpdate).where(eq(seriesSeasons.id, existing[0].id));
+    } else {
+      await db.insert(seriesSeasons).values({
+        seriesId,
+        seasonNumber: season.seasonNumber,
+        ...metadataUpdate,
+        createdAt: now
+      });
+    }
   }
 };
 
-const syncEpisodes = async (seriesId, sonarrSeriesId, now) => {
+const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
   try {
     // Get episodes from Sonarr API
     const episodes = await sonarrService.getEpisodesBySeries(sonarrSeriesId);
-    if (!episodes || episodes.length === 0) return;
-    
+    if (!episodes || episodes.length === 0) return 0;
+
     // Get season mappings for this series
     const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
     const seasonIdMap = {};
     for (const season of seasons) {
       seasonIdMap[season.seasonNumber] = season.id;
     }
-    
-    // Delete existing episodes for this series
-    await db.delete(seriesEpisodes).where(eq(seriesEpisodes.seriesId, seriesId));
-    
-    // Insert new episode records
-    const episodeRecords = episodes.map(episode => ({
-      seriesId: seriesId,
-      seasonId: seasonIdMap[episode.seasonNumber] || null,
-      sonarrEpisodeId: episode.id,
-      title: episode.title,
-      episodeNumber: episode.episodeNumber,
-      seasonNumber: episode.seasonNumber,
-      overview: episode.overview,
-      airDate: parseTimestamp(episode.airDateUtc),
-      hasFile: episode.hasFile || false,
-      monitored: episode.monitored || true,
-      createdAt: now,
-      updatedAt: now
-    }));
-    
-    if (episodeRecords.length > 0) {
-      await db.insert(seriesEpisodes).values(episodeRecords);
+
+    let upsertCount = 0;
+    for (const episode of episodes) {
+      const existing = await db.select().from(seriesEpisodes).where(
+        eq(seriesEpisodes.sonarrEpisodeId, episode.id)
+      );
+
+      // Metadata only - preserve isAutoDownloadEnabled, autoDownloadStatus, downloadedAt
+      const metadataUpdate = {
+        seriesId,
+        seasonId: seasonIdMap[episode.seasonNumber] || null,
+        title: episode.title,
+        episodeNumber: episode.episodeNumber,
+        seasonNumber: episode.seasonNumber,
+        overview: episode.overview,
+        airDate: parseTimestamp(episode.airDateUtc),
+        hasFile: episode.hasFile || false,
+        monitored: episode.monitored || true,
+        updatedAt: now
+      };
+
+      if (existing.length > 0) {
+        await db.update(seriesEpisodes)
+          .set(metadataUpdate)
+          .where(eq(seriesEpisodes.id, existing[0].id));
+      } else {
+        await db.insert(seriesEpisodes).values({
+          sonarrEpisodeId: episode.id,
+          ...metadataUpdate,
+          createdAt: now
+        });
+      }
+      upsertCount++;
     }
-    
-    return episodeRecords.length;
+
+    return upsertCount;
   } catch (error) {
     console.error('Error syncing episodes:', error);
     throw error;
@@ -239,13 +280,13 @@ const syncSeries = async (req, res) => {
       }
 
       await Promise.all([
-        syncSeriesImages(seriesId, item.images, now),
-        syncAlternateTitles(seriesId, item.alternateTitles, now),
-        syncSeasons(seriesId, item.seasons, now)
+        upsertSeriesImages(seriesId, item.images, now),
+        upsertAlternateTitles(seriesId, item.alternateTitles, now),
+        upsertSeasons(seriesId, item.seasons, now)
       ]);
-      
+
       // Sync episodes after seasons are synced (episodes reference seasons)
-      await syncEpisodes(seriesId, item.id, now);
+      await upsertEpisodes(seriesId, item.id, now);
     }
 
     res.json({
@@ -320,7 +361,7 @@ const syncSeriesEpisodes = async (req, res) => {
     }
 
     const now = new Date();
-    const episodeCount = await syncEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+    const episodeCount = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
 
     res.json({
       success: true,
