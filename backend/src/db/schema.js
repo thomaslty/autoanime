@@ -174,6 +174,35 @@ const seriesSeasons = pgTable('series_seasons', {
   index('idx_series_seasons_number').on(table.seasonNumber),
 ]);
 
+const seriesEpisodes = pgTable('series_episodes', {
+  id: serial('id').primaryKey(),
+  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seasonId: integer('season_id').references(() => seriesSeasons.id, { onDelete: 'cascade' }),
+  sonarrEpisodeId: integer('sonarr_episode_id').notNull().unique(),
+  
+  // Episode metadata
+  title: text('title'),
+  episodeNumber: integer('episode_number').notNull(),
+  seasonNumber: integer('season_number').notNull(),
+  overview: text('overview'),
+  airDate: timestamp('air_date'),
+  
+  // Status flags from Sonarr
+  hasFile: boolean('has_file').default(false),
+  monitored: boolean('monitored').default(true),
+  
+  // AutoAnime-specific tracking
+  autoDownloadStatus: varchar('auto_download_status'),
+  downloadedAt: timestamp('downloaded_at'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_episodes_series').on(table.sonarrSeriesId),
+  index('idx_episodes_season').on(table.seasonId),
+  index('idx_episodes_sonarr_id').on(table.sonarrEpisodeId),
+]);
+
 module.exports = {
   sonarrSeries,
   rssSources,
@@ -183,5 +212,6 @@ module.exports = {
   settings,
   seriesImages,
   seriesAlternateTitles,
-  seriesSeasons
+  seriesSeasons,
+  seriesEpisodes
 };

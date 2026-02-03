@@ -1,0 +1,140 @@
+{
+    "id": 1,
+    "path": "/media/Frieren - Beyond Journey's End",
+    "tags": [],
+    "year": 2023,
+    "added": "2026-01-31T21:37:29Z",
+    "ended": false,
+    "title": "Frieren: Beyond Journey's End",
+    "genres": [
+        "Adventure",
+        "Animation",
+        "Anime",
+        "Drama",
+        "Fantasy"
+    ],
+    "images": [
+        {
+            "url": "/MediaCover/1/banner.jpg?lastWrite=639054922500600556",
+            "coverType": "banner",
+            "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/424536/banners/651dd688bd4d5.jpg"
+        },
+        {
+            "url": "/MediaCover/1/poster.jpg?lastWrite=639054922502170519",
+            "coverType": "poster",
+            "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/424536/posters/6516fe48e7a06.jpg"
+        },
+        {
+            "url": "/MediaCover/1/fanart.jpg?lastWrite=639054922502720505",
+            "coverType": "fanart",
+            "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/424536/backgrounds/64e6c54bb62c9.jpg"
+        },
+        {
+            "url": "/MediaCover/1/clearlogo.png?lastWrite=639054922503010498",
+            "coverType": "clearlogo",
+            "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/424536/clearlogo/65d798fbd2f61.png"
+        }
+    ],
+    "imdbId": "tt22248376",
+    "status": "continuing",
+    "tmdbId": 209867,
+    "tvdbId": 424536,
+    "airTime": "23:00",
+    "network": "Nippon TV",
+    "ratings": {
+        "value": 8.9,
+        "votes": 65333
+    },
+    "runtime": 25,
+    "seasons": [
+        {
+            "monitored": false,
+            "statistics": {
+                "sizeOnDisk": 0,
+                "episodeCount": 0,
+                "releaseGroups": [],
+                "episodeFileCount": 0,
+                "percentOfEpisodes": 0,
+                "totalEpisodeCount": 22
+            },
+            "seasonNumber": 0
+        },
+        {
+            "monitored": true,
+            "statistics": {
+                "sizeOnDisk": 0,
+                "episodeCount": 28,
+                "releaseGroups": [],
+                "previousAiring": "2024-03-22T14:00:00Z",
+                "episodeFileCount": 0,
+                "percentOfEpisodes": 0,
+                "totalEpisodeCount": 28
+            },
+            "seasonNumber": 1
+        },
+        {
+            "monitored": true,
+            "statistics": {
+                "nextAiring": "2026-02-06T14:00:00Z",
+                "sizeOnDisk": 0,
+                "episodeCount": 3,
+                "releaseGroups": [],
+                "previousAiring": "2026-01-30T14:00:00Z",
+                "episodeFileCount": 0,
+                "percentOfEpisodes": 0,
+                "totalEpisodeCount": 10
+            },
+            "seasonNumber": 2
+        }
+    ],
+    "overview": "Decades after her party defeated the Demon King, an old friend's funeral launches the elf wizard Frieren on a journey of self-discovery.",
+    "tvMazeId": 69956,
+    "tvRageId": 0,
+    "lastAired": "2026-03-20T00:00:00Z",
+    "monitored": true,
+    "sortTitle": "frieren beyond journeys end",
+    "titleSlug": "frieren-beyond-journeys-end",
+    "cleanTitle": "frierenbeyondjourneysend",
+    "firstAired": "2023-09-29T00:00:00Z",
+    "nextAiring": "2026-02-06T14:00:00Z",
+    "seriesType": "standard",
+    "statistics": {
+        "sizeOnDisk": 0,
+        "seasonCount": 2,
+        "episodeCount": 31,
+        "releaseGroups": [],
+        "episodeFileCount": 0,
+        "percentOfEpisodes": 0,
+        "totalEpisodeCount": 60
+    },
+    "seasonFolder": true,
+    "certification": "TV-14",
+    "previousAiring": "2026-01-30T14:00:00Z",
+    "rootFolderPath": "/media",
+    "alternateTitles": [
+        {
+            "title": "Sousou no Frieren",
+            "sceneSeasonNumber": -1
+        },
+        {
+            "title": "Frieren Nach dem Ende der Reise",
+            "sceneSeasonNumber": -1
+        },
+        {
+            "title": "Sousou no Frieren S2",
+            "sceneSeasonNumber": 2
+        },
+        {
+            "title": "Sousou no Frieren 2nd Season",
+            "sceneSeasonNumber": 2
+        }
+    ],
+    "monitorNewItems": "all",
+    "originalLanguage": {
+        "id": 8,
+        "name": "Japanese"
+    },
+    "qualityProfileId": 4,
+    "languageProfileId": 1,
+    "useSceneNumbering": true
+}

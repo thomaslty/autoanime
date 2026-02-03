@@ -1,147 +1,183 @@
-# Series Metadata Enhancement Plan
+# AutoAnime Series Episode Tracking Enhancement
 
-## Current Missing Database Values
-The following fields are missing from series sync and need to be added:
-- `season_count`
-- `total_episode_count`
-- `episode_file_count`
+## Overview
 
-## Proposed Database Schema Additions
+Enhance the autoanime application to track individual episodes and display season/episode information on the series detail page.
 
-Based on the Sonarr API response, enhance the `series` table with the following columns:
+## Current State
 
-### Core Metadata
-| Column | Type | Description |
-|--------|------|-------------|
-| `year` | INTEGER | Release year (e.g., 2023) |
-| `ended` | BOOLEAN | Whether the series has ended |
-| `genres` | TEXT (JSON array) | List of genres (e.g., ["Adventure", "Animation", "Anime"]) |
-| `network` | VARCHAR(255) | Broadcasting network (e.g., "Nippon TV") |
-| `runtime` | INTEGER | Episode runtime in minutes |
-| `certification` | VARCHAR(50) | Content rating (e.g., "TV-14") |
-| `series_type` | VARCHAR(50) | Type of series (e.g., "standard") |
+### Database
+- `sonarr_series` table: stores series metadata with aggregate statistics (`season_count`, `episode_count`, `total_episode_count`, `episode_file_count`)
+- `series_seasons` table: stores per-season statistics synced from Sonarr (`episode_count`, `episode_file_count`, `total_episode_count`, `monitored`)
+- **Missing**: individual episode tracking for autoanime download status
 
-### External IDs
-| Column | Type | Description |
-|--------|------|-------------|
-| `imdb_id` | VARCHAR(20) | IMDb ID (e.g., "tt22248376") |
-| `tmdb_id` | INTEGER | TheMovieDB ID |
-| `tvdb_id` | INTEGER | TheTVDB ID |
-| `tv_maze_id` | INTEGER | TVMaze ID |
+### Backend
+- `sonarrController.js`: syncs series, seasons, images, and alternate titles from Sonarr API
+- `sonarrService.js`: provides API methods for Sonarr (`getAllSeries`, `getSeriesById`, etc.)
+- **Missing**: episode-level sync from Sonarr `/api/v3/episode` endpoint
 
-### Statistics
-| Column | Type | Description |
-|--------|------|-------------|
-| `season_count` | INTEGER | Number of seasons |
-| `episode_count` | INTEGER | Number of monitored episodes |
-| `total_episode_count` | INTEGER | Total episodes including unaired |
-| `episode_file_count` | INTEGER | Number of downloaded episode files |
-| `size_on_disk` | BIGINT | Total size in bytes |
-| `percent_of_episodes` | DECIMAL(5,2) | Percentage of episodes downloaded |
-
-### Dates & Airing
-| Column | Type | Description |
-|--------|------|-------------|
-| `first_aired` | TIMESTAMP | First episode air date |
-| `last_aired` | TIMESTAMP | Most recent episode air date |
-| `next_airing` | TIMESTAMP | Next scheduled episode |
-| `previous_airing` | TIMESTAMP | Previous episode air date |
-| `air_time` | VARCHAR(10) | Regular air time (e.g., "23:00") |
-| `added_at` | TIMESTAMP | When added to Sonarr |
-
-### Ratings
-| Column | Type | Description |
-|--------|------|-------------|
-| `rating_value` | DECIMAL(3,1) | Rating score (e.g., 8.9) |
-| `rating_votes` | INTEGER | Number of votes |
-
-### Images (Separate Table: `series_images`)
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER | Primary key |
-| `series_id` | INTEGER | FK to series |
-| `cover_type` | VARCHAR(50) | Type: banner, poster, fanart, clearlogo |
-| `url` | TEXT | Local URL path |
-| `remote_url` | TEXT | Original remote URL |
-
-### Alternate Titles (Separate Table: `series_alternate_titles`)
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER | Primary key |
-| `series_id` | INTEGER | FK to series |
-| `title` | VARCHAR(500) | Alternate title |
-| `scene_season_number` | INTEGER | Associated season (-1 for all) |
-
-### Seasons (Separate Table: `series_seasons`)
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER | Primary key |
-| `series_id` | INTEGER | FK to series |
-| `season_number` | INTEGER | Season number |
-| `monitored` | BOOLEAN | If season is monitored |
-| `episode_count` | INTEGER | Episodes in season |
-| `episode_file_count` | INTEGER | Downloaded episodes |
-| `total_episode_count` | INTEGER | Total episodes |
-| `size_on_disk` | BIGINT | Size in bytes |
-| `percent_of_episodes` | DECIMAL(5,2) | Download percentage |
-| `next_airing` | TIMESTAMP | Next episode air date |
-| `previous_airing` | TIMESTAMP | Previous episode air date |
-
-## Implementation Steps
-
-1. [ ] Create database migration for new `series` table columns
-2. [ ] Create migration for `series_images` table
-3. [ ] Create migration for `series_alternate_titles` table
-4. [ ] Create migration for `series_seasons` table
-5. [ ] Update `sonarrService.js` to extract and map all new fields
-6. [ ] Update Series model to include new fields
-7. [ ] Update API endpoints to return enhanced metadata
-8. [ ] Update frontend to display new metadata
+### Frontend
+- `SeriesDetailPage.jsx`: displays series overview with status cards (status, seasons, episodes, monitored)
+- **Missing**: season/episode list UI grouped by monitored status
 
 ---
 
-## Reference JSON
-<details>
-<summary>Click to expand Sonarr API response example</summary>
+## Phase 1: Database Schema - Individual Episode Tracking
 
-```json
-{
-  "id": 1,
-  "path": "/media/Frieren - Beyond Journey's End",
-  "tags": [],
-  "year": 2023,
-  "added": "2026-01-31T21:37:29Z",
-  "ended": false,
-  "title": "Frieren: Beyond Journey's End",
-  "genres": ["Adventure", "Animation", "Anime", "Drama", "Fantasy"],
-  "images": [
-    {
-      "url": "/MediaCover/1/banner.jpg",
-      "coverType": "banner",
-      "remoteUrl": "https://artworks.thetvdb.com/..."
-    }
-  ],
-  "imdbId": "tt22248376",
-  "status": "continuing",
-  "tmdbId": 209867,
-  "tvdbId": 424536,
-  "airTime": "23:00",
-  "network": "Nippon TV",
-  "ratings": {"value": 8.9, "votes": 65333},
-  "runtime": 25,
-  "seasons": [...],
-  "overview": "...",
-  "statistics": {
-    "sizeOnDisk": 0,
-    "seasonCount": 2,
-    "episodeCount": 31,
-    "releaseGroups": [],
-    "episodeFileCount": 0,
-    "percentOfEpisodes": 0,
-    "totalEpisodeCount": 60
-  },
-  "certification": "TV-14",
-  "alternateTitles": [...]
-}
+### 1.1 Create `series_episodes` table
+
+Create new table in `backend/src/db/schema.js`:
+
+```javascript
+const seriesEpisodes = pgTable('series_episodes', {
+  id: serial('id').primaryKey(),
+  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seasonId: integer('season_id').references(() => seriesSeasons.id, { onDelete: 'cascade' }),
+  sonarrEpisodeId: integer('sonarr_episode_id').notNull(),
+  
+  // Episode metadata
+  title: text('title'),
+  episodeNumber: integer('episode_number').notNull(),
+  seasonNumber: integer('season_number').notNull(),
+  overview: text('overview'),
+  airDate: timestamp('air_date'),
+  
+  // Status flags from Sonarr
+  hasFile: boolean('has_file').default(false),
+  monitored: boolean('monitored').default(true),
+  
+  // AutoAnime-specific tracking
+  autoDownloadStatus: varchar('auto_download_status'), // 'pending', 'downloading', 'completed', 'failed'
+  downloadedAt: timestamp('downloaded_at'),
+  
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_episodes_series').on(table.sonarrSeriesId),
+  index('idx_episodes_season').on(table.seasonId),
+  index('idx_episodes_sonarr_id').on(table.sonarrEpisodeId),
+]);
 ```
-</details>
+
+### 1.2 Generate and Run Migration
+
+```bash
+cd backend
+npm run db:generate
+npm run db:migrate
+```
+
+---
+
+## Phase 2: Backend - Episode Sync from Sonarr
+
+### 2.1 Add Episode API Methods to `sonarrService.js`
+
+```javascript
+// Get all episodes for a series
+const getEpisodesBySeries = async (seriesId) => {
+  // GET /api/v3/episode?seriesId={seriesId}
+};
+
+// Get specific episode
+const getEpisode = async (episodeId) => {
+  // GET /api/v3/episode/{id}
+};
+```
+
+### 2.2 Update `sonarrController.js`
+
+- Add `syncEpisodes()` function to sync episodes from Sonarr API
+- Update `syncSeries()` to call `syncEpisodes()` after syncing seasons
+- Add `getSeriesEpisodes()` endpoint to return episodes grouped by season
+
+### 2.3 Add New Routes
+
+In `backend/src/routes/sonarr.js`:
+- `GET /api/sonarr/series/:id/episodes` - get all episodes for a series
+- `POST /api/sonarr/series/:id/episodes/sync` - sync episodes from Sonarr
+
+---
+
+## Phase 3: Frontend - Season/Episode List Display
+
+### 3.1 Update `SeriesDetailPage.jsx`
+
+Add season/episode section below the overview card:
+
+```jsx
+{/* Season/Episode List */}
+<div className="mt-6 space-y-4">
+  {seasons
+    .filter(s => s.monitored)
+    .sort((a, b) => a.seasonNumber - b.seasonNumber)
+    .map(season => (
+      <SeasonCard 
+        key={season.id} 
+        season={season} 
+        episodes={episodes.filter(e => e.seasonNumber === season.seasonNumber)} 
+      />
+    ))}
+</div>
+```
+
+### 3.2 Create `SeasonCard` Component
+
+Display:
+- Season header with number and monitored status
+- Episode count: `{episodeFileCount}/{totalEpisodeCount}`
+- Expandable episode list grouped by `monitored == true`
+- Progress bar showing download percentage
+
+### 3.3 Episode Count Logic
+
+Per user requirement:
+> "total episode count should be sum of all seasons with `monitored==true`"
+
+Calculate in frontend:
+```javascript
+const totalMonitoredEpisodes = seasons
+  .filter(s => s.monitored)
+  .reduce((sum, s) => sum + (s.totalEpisodeCount || 0), 0);
+```
+
+---
+
+## Phase 4: AutoAnime Download Status Tracking
+
+### 4.1 Episode Status Values
+
+| Status | Description |
+|--------|-------------|
+| `null` | Not tracked by autoanime |
+| `pending` | Queued for download |
+| `downloading` | Currently downloading via qBittorrent |
+| `completed` | Downloaded successfully |
+| `failed` | Download failed |
+
+### 4.2 Integration Points
+
+- Link `seriesEpisodes.autoDownloadStatus` with `qbittorrent_downloads` table
+- Update status when RSS feed matches an episode
+- Track download progress from qBittorrent API
+
+---
+
+## References
+
+| Resource | Path |
+|----------|------|
+| Sonarr API v3 Spec | [@/api_docs/sonarr_v3.json](./api_docs/sonarr_v3.json) |
+| Sonarr Series Example | [@/api_docs/sonarr_series_example.json](./api_docs/sonarr_series_example.json) |
+| Database Schema | [@/backend/src/db/schema.js](./backend/src/db/schema.js) |
+| qBittorrent API | [@/api_docs/WebUI-API-(qBittorrent-5.0).md](./api_docs/WebUI-API-(qBittorrent-5.0).md) |
+
+---
+
+## Verification Checklist
+
+- [ ] Migration runs without errors
+- [ ] Episodes sync from Sonarr API
+- [ ] Series detail page displays season list
+- [ ] Episode counts match Sonarr data
+- [ ] Only monitored seasons shown in default view

@@ -101,10 +101,42 @@ const refreshSeries = async (seriesId) => {
   return response.json();
 };
 
+const getEpisodesBySeries = async (seriesId) => {
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v3`;
+  
+  const response = await fetch(`${apiBase}/episode?seriesId=${seriesId}`, { headers });
+  if (!response.ok) {
+    throw new Error(`Sonarr API error: ${response.status}`);
+  }
+  return response.json();
+};
+
+const getEpisodeById = async (episodeId) => {
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v3`;
+  
+  const response = await fetch(`${apiBase}/episode/${episodeId}`, { headers });
+  if (!response.ok) {
+    throw new Error(`Sonarr API error: ${response.status}`);
+  }
+  return response.json();
+};
+
 module.exports = {
   getStatus,
   getAllSeries,
   getSeriesById,
   searchSeries,
-  refreshSeries
+  refreshSeries,
+  getEpisodesBySeries,
+  getEpisodeById
 };

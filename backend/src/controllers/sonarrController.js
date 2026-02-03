@@ -1,6 +1,6 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
-const { sonarrSeries, seriesImages, seriesAlternateTitles, seriesSeasons } = require('../db/schema');
+const { sonarrSeries, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
 
 const extractImageUrl = (images, coverType) => {
@@ -73,6 +73,49 @@ const syncSeasons = async (seriesId, seasons, now) => {
   
   if (seasonRecords.length > 0) {
     await db.insert(seriesSeasons).values(seasonRecords);
+  }
+};
+
+const syncEpisodes = async (seriesId, sonarrSeriesId, now) => {
+  try {
+    // Get episodes from Sonarr API
+    const episodes = await sonarrService.getEpisodesBySeries(sonarrSeriesId);
+    if (!episodes || episodes.length === 0) return;
+    
+    // Get season mappings for this series
+    const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, seriesId));
+    const seasonIdMap = {};
+    for (const season of seasons) {
+      seasonIdMap[season.seasonNumber] = season.id;
+    }
+    
+    // Delete existing episodes for this series
+    await db.delete(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, seriesId));
+    
+    // Insert new episode records
+    const episodeRecords = episodes.map(episode => ({
+      sonarrSeriesId: seriesId,
+      seasonId: seasonIdMap[episode.seasonNumber] || null,
+      sonarrEpisodeId: episode.id,
+      title: episode.title,
+      episodeNumber: episode.episodeNumber,
+      seasonNumber: episode.seasonNumber,
+      overview: episode.overview,
+      airDate: parseTimestamp(episode.airDateUtc),
+      hasFile: episode.hasFile || false,
+      monitored: episode.monitored || true,
+      createdAt: now,
+      updatedAt: now
+    }));
+    
+    if (episodeRecords.length > 0) {
+      await db.insert(seriesEpisodes).values(episodeRecords);
+    }
+    
+    return episodeRecords.length;
+  } catch (error) {
+    console.error('Error syncing episodes:', error);
+    throw error;
   }
 };
 
@@ -154,17 +197,19 @@ const getSeriesById = async (req, res) => {
       return res.status(404).json({ error: 'Series not found' });
     }
     
-    const [images, alternateTitles, seasons] = await Promise.all([
+    const [images, alternateTitles, seasons, episodes] = await Promise.all([
       db.select().from(seriesImages).where(eq(seriesImages.sonarrSeriesId, parseInt(id))),
       db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.sonarrSeriesId, parseInt(id))),
-      db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, parseInt(id)))
+      db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, parseInt(id))),
+      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, parseInt(id)))
     ]);
     
     res.json({
       ...series[0],
       images,
       alternateTitles,
-      seasons
+      seasons,
+      episodes
     });
   } catch (error) {
     console.error('Error fetching series:', error);
@@ -197,6 +242,9 @@ const syncSeries = async (req, res) => {
         syncAlternateTitles(seriesId, item.alternateTitles, now),
         syncSeasons(seriesId, item.seasons, now)
       ]);
+      
+      // Sync episodes after seasons are synced (episodes reference seasons)
+      await syncEpisodes(seriesId, item.id, now);
     }
 
     res.json({
@@ -228,10 +276,69 @@ const triggerRefresh = async (req, res) => {
   }
 };
 
+const getSeriesEpisodes = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
+    if (series.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const [episodes, seasons] = await Promise.all([
+      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, parseInt(id))),
+      db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, parseInt(id)))
+    ]);
+
+    // Group episodes by season
+    const episodesBySeason = {};
+    for (const season of seasons) {
+      episodesBySeason[season.seasonNumber] = {
+        season,
+        episodes: episodes.filter(e => e.seasonNumber === season.seasonNumber)
+      };
+    }
+
+    res.json({
+      seriesId: parseInt(id),
+      episodes,
+      seasons,
+      episodesBySeason
+    });
+  } catch (error) {
+    console.error('Error fetching episodes:', error);
+    res.status(500).json({ error: 'Failed to fetch episodes' });
+  }
+};
+
+const syncSeriesEpisodes = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
+    if (series.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const now = new Date();
+    const episodeCount = await syncEpisodes(series[0].id, series[0].sonarrId, now);
+
+    res.json({
+      success: true,
+      message: `Synced ${episodeCount || 0} episodes for series ${series[0].title}`,
+      seriesId: parseInt(id),
+      syncedAt: now
+    });
+  } catch (error) {
+    console.error('Error syncing episodes:', error);
+    res.status(500).json({ error: `Failed to sync episodes: ${error.message}` });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
   getSeriesById,
   syncSeries,
-  triggerRefresh
+  triggerRefresh,
+  getSeriesEpisodes,
+  syncSeriesEpisodes
 };

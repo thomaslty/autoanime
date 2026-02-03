@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
+import { SeasonCard } from "../components/SeasonCard"
 import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -160,7 +161,6 @@ export function SeriesDetailPage() {
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h1 className="text-3xl font-bold mb-2">{series.title}</h1>
-                <p className="text-muted-foreground">{series.titleSlug}</p>
               </div>
               <Button onClick={handleRefresh} variant="outline">
                 <RefreshCw size={18} className="mr-2" />
@@ -168,32 +168,41 @@ export function SeriesDetailPage() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-muted-foreground text-sm">Status</p>
-                  <p className="font-medium">{series.status || "Unknown"}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-muted-foreground text-sm">Seasons</p>
-                  <p className="font-medium">{series.seasonCount || 0}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-muted-foreground text-sm">Episodes</p>
-                  <p className="font-medium">{series.episodeFileCount}/{series.totalEpisodeCount}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-muted-foreground text-sm">Monitored</p>
-                  <p className="font-medium">{series.monitored ? "Yes" : "No"}</p>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Calculate monitored seasons episode count */}
+            {(() => {
+              const monitoredSeasons = series.seasons?.filter(s => s.monitored) || []
+              const monitoredEpisodeCount = monitoredSeasons.reduce((sum, s) => sum + (s.episodeFileCount || 0), 0)
+              const totalMonitoredEpisodes = monitoredSeasons.reduce((sum, s) => sum + (s.totalEpisodeCount || 0), 0)
+              
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-muted-foreground text-sm">Status</p>
+                      <p className="font-medium">{series.status || "Unknown"}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-muted-foreground text-sm">Seasons</p>
+                      <p className="font-medium">{series.seasonCount || 0}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-muted-foreground text-sm">Episodes</p>
+                      <p className="font-medium">{monitoredEpisodeCount}/{totalMonitoredEpisodes}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <p className="text-muted-foreground text-sm">Monitored</p>
+                      <p className="font-medium">{series.monitored ? "Yes" : "No"}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            })()}
 
             {series.overview && (
               <Card>
@@ -205,6 +214,23 @@ export function SeriesDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Season/Episode List */}
+        {series.seasons && series.seasons.length > 0 && series.episodes && (
+          <div className="mt-8 space-y-4">
+            <h2 className="text-xl font-semibold mb-4">Seasons & Episodes</h2>
+            {series.seasons
+              .filter(s => s.monitored)
+              .sort((a, b) => a.seasonNumber - b.seasonNumber)
+              .map(season => (
+                <SeasonCard 
+                  key={season.id} 
+                  season={season} 
+                  episodes={series.episodes.filter(e => e.seasonNumber === season.seasonNumber)} 
+                />
+              ))}
+          </div>
+        )}
       </div>
     </Layout>
   )
