@@ -10,7 +10,8 @@ const encrypt = (text) => {
   if (!text) return null;
   try {
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(ALGORITHM, ENCRYPTION_KEY);
+    const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const cipher = crypto.createCipheriv(ALGORITHM, keyBuffer, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag ? cipher.getAuthTag().toString('hex') : '';
@@ -31,7 +32,8 @@ const decrypt = (encryptedText) => {
     const authTag = Buffer.from(parts[1], 'hex');
     const encrypted = parts[2];
     
-    const decipher = crypto.createDecipher(ALGORITHM, ENCRYPTION_KEY);
+    const keyBuffer = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const decipher = crypto.createDecipheriv(ALGORITHM, keyBuffer, iv);
     if (decipher.setAuthTag) {
       decipher.setAuthTag(authTag);
     }
