@@ -11,7 +11,7 @@ const settings = pgTable('settings', {
   index('idx_settings_key').on(table.key),
 ]);
 
-const sonarrSeries = pgTable('sonarr_series', {
+const series = pgTable('series', {
   id: serial('id').primaryKey(),
   sonarrId: integer('sonarr_id').notNull().unique(),
   title: text('title').notNull(),
@@ -53,18 +53,18 @@ const sonarrSeries = pgTable('sonarr_series', {
   ratingVotes: integer('rating_votes'),
   monitored: boolean('monitored').default(true),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
-  downloadStatus: varchar('download_status'),
+  downloadStatus: integer('download_status').default(0),
   lastSyncedAt: timestamp('last_synced_at').defaultNow(),
   rawData: jsonb('raw_data'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_sonarr_series_title').on(table.title),
-  index('idx_sonarr_series_status').on(table.status),
-  index('idx_sonarr_series_last_synced').on(table.lastSyncedAt),
-  index('idx_sonarr_series_imdb').on(table.imdbId),
-  index('idx_sonarr_series_tmdb').on(table.tmdbId),
-  index('idx_sonarr_series_tvdb').on(table.tvdbId),
+  index('idx_series_title').on(table.title),
+  index('idx_series_status').on(table.status),
+  index('idx_series_last_synced').on(table.lastSyncedAt),
+  index('idx_series_imdb').on(table.imdbId),
+  index('idx_series_tmdb').on(table.tmdbId),
+  index('idx_series_tvdb').on(table.tvdbId),
 ]);
 
 const rssSources = pgTable('rss_sources', {
@@ -83,7 +83,7 @@ const rssSources = pgTable('rss_sources', {
 const rssAnimeConfigs = pgTable('rss_anime_configs', {
   id: serial('id').primaryKey(),
   rssSourceId: integer('rss_source_id').references(() => rssSources.id),
-  sonarrSeriesId: integer('sonarr_series_id').references(() => sonarrSeries.id),
+  seriesId: integer('series_id').references(() => series.id),
   name: varchar('name').notNull(),
   url: varchar('url').notNull(),
   isEnabled: boolean('is_enabled').default(true),
@@ -114,7 +114,7 @@ const qbittorrentDownloads = pgTable('qbittorrent_downloads', {
   id: serial('id').primaryKey(),
   torrentHash: varchar('torrent_hash').unique(),
   magnetLink: text('magnet_link').notNull(),
-  sonarrSeriesId: integer('sonarr_series_id').references(() => sonarrSeries.id),
+  seriesId: integer('series_id').references(() => series.id),
   category: varchar('category'),
   status: varchar('status'),
   name: varchar('name'),
@@ -127,37 +127,37 @@ const qbittorrentDownloads = pgTable('qbittorrent_downloads', {
 }, (table) => [
   index('idx_qbittorrent_downloads_status').on(table.status),
   index('idx_qbittorrent_downloads_hash').on(table.torrentHash),
-  index('idx_qbittorrent_downloads_series').on(table.sonarrSeriesId),
+  index('idx_qbittorrent_downloads_series').on(table.seriesId),
 ]);
 
 const seriesImages = pgTable('series_images', {
   id: serial('id').primaryKey(),
-  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
   coverType: varchar('cover_type', { length: 50 }).notNull(),
   url: text('url'),
   remoteUrl: text('remote_url'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_series_images_series').on(table.sonarrSeriesId),
+  index('idx_series_images_series').on(table.seriesId),
   index('idx_series_images_type').on(table.coverType),
 ]);
 
 const seriesAlternateTitles = pgTable('series_alternate_titles', {
   id: serial('id').primaryKey(),
-  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 500 }).notNull(),
   sceneSeasonNumber: integer('scene_season_number'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_series_alt_titles_series').on(table.sonarrSeriesId),
+  index('idx_series_alt_titles_series').on(table.seriesId),
   index('idx_series_alt_titles_title').on(table.title),
 ]);
 
 const seriesSeasons = pgTable('series_seasons', {
   id: serial('id').primaryKey(),
-  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
   seasonNumber: integer('season_number').notNull(),
   monitored: boolean('monitored').default(true),
   episodeCount: integer('episode_count'),
@@ -167,44 +167,47 @@ const seriesSeasons = pgTable('series_seasons', {
   percentOfEpisodes: numeric('percent_of_episodes', { precision: 5, scale: 2 }),
   nextAiring: timestamp('next_airing'),
   previousAiring: timestamp('previous_airing'),
+  isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
+  autoDownloadStatus: integer('auto_download_status').default(0),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_series_seasons_series').on(table.sonarrSeriesId),
+  index('idx_series_seasons_series').on(table.seriesId),
   index('idx_series_seasons_number').on(table.seasonNumber),
 ]);
 
 const seriesEpisodes = pgTable('series_episodes', {
   id: serial('id').primaryKey(),
-  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }),
   seasonId: integer('season_id').references(() => seriesSeasons.id, { onDelete: 'cascade' }),
   sonarrEpisodeId: integer('sonarr_episode_id').notNull().unique(),
-  
+
   // Episode metadata
   title: text('title'),
   episodeNumber: integer('episode_number').notNull(),
   seasonNumber: integer('season_number').notNull(),
   overview: text('overview'),
   airDate: timestamp('air_date'),
-  
+
   // Status flags from Sonarr
   hasFile: boolean('has_file').default(false),
   monitored: boolean('monitored').default(true),
-  
+
   // AutoAnime-specific tracking
-  autoDownloadStatus: varchar('auto_download_status'),
+  isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
+  autoDownloadStatus: integer('auto_download_status').default(0),
   downloadedAt: timestamp('downloaded_at'),
-  
+
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_episodes_series').on(table.sonarrSeriesId),
+  index('idx_episodes_series').on(table.seriesId),
   index('idx_episodes_season').on(table.seasonId),
   index('idx_episodes_sonarr_id').on(table.sonarrEpisodeId),
 ]);
 
 module.exports = {
-  sonarrSeries,
+  series,
   rssSources,
   rssAnimeConfigs,
   rssFeedItems,

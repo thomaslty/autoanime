@@ -2,10 +2,38 @@ import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
-import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff } from "lucide-react"
+import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, CheckCircle2, Clock, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
+
+const AutoDownloadStatus = {
+  DISABLED: 0,
+  PENDING: 1,
+  DOWNLOADING: 2,
+  DOWNLOADED: 3,
+  FAILED: 4,
+  SKIPPED: 5
+}
+
+function getStatusLabel(status) {
+  switch (status) {
+    case AutoDownloadStatus.DOWNLOADING:
+      return "Downloading"
+    case AutoDownloadStatus.PENDING:
+      return "Pending"
+    case AutoDownloadStatus.DOWNLOADED:
+      return "Downloaded"
+    case AutoDownloadStatus.FAILED:
+      return "Failed"
+    case AutoDownloadStatus.SKIPPED:
+      return "Skipped"
+    case AutoDownloadStatus.DISABLED:
+    default:
+      return "Disabled"
+  }
+}
 
 export function SeriesDetailPage() {
   const { id } = useParams()
@@ -13,6 +41,7 @@ export function SeriesDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
+  const [downloadStatus, setDownloadStatus] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -44,8 +73,21 @@ export function SeriesDetailPage() {
       }
     }
 
+    const fetchDownloadStatus = async () => {
+      try {
+        const response = await fetch(`/api/sonarr/series/${id}/auto-download-status`)
+        if (response.ok) {
+          const data = await response.json()
+          setDownloadStatus(data)
+        }
+      } catch (err) {
+        console.error("Error fetching download status:", err)
+      }
+    }
+
     fetchHealth()
     fetchSeries()
+    fetchDownloadStatus()
   }, [id])
 
   const getServiceError = () => {
@@ -65,6 +107,77 @@ export function SeriesDetailPage() {
       await fetch(`/api/sonarr/series/${id}/refresh`, { method: "POST" })
     } catch (err) {
       console.error("Error triggering refresh:", err)
+    }
+  }
+
+  const handleToggleSeriesAutoDownload = async (enabled) => {
+    try {
+      const response = await fetch(`/api/sonarr/series/${id}/auto-download`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSeries(prev => ({ ...prev, isAutoDownloadEnabled: enabled, downloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED }))
+        setDownloadStatus(data.downloadStatus)
+      }
+    } catch (err) {
+      console.error("Error toggling series auto-download:", err)
+    }
+  }
+
+  const handleToggleSeasonAutoDownload = async (seasonNumber, enabled) => {
+    try {
+      const response = await fetch(`/api/sonarr/series/${id}/seasons/${seasonNumber}/auto-download`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSeries(prev => ({
+          ...prev,
+          seasons: prev.seasons.map(s =>
+            s.seasonNumber === seasonNumber
+              ? { ...s, isAutoDownloadEnabled: enabled, autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED }
+              : s
+          ),
+          episodes: prev.episodes.map(e =>
+            e.seasonNumber === seasonNumber
+              ? { ...e, isAutoDownloadEnabled: enabled, autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED }
+              : e
+          )
+        }))
+      }
+    } catch (err) {
+      console.error("Error toggling season auto-download:", err)
+    }
+  }
+
+  const handleToggleEpisodeAutoDownload = async (episodeId, enabled) => {
+    try {
+      const response = await fetch(`/api/sonarr/series/${id}/episodes/${episodeId}/auto-download`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSeries(prev => ({
+          ...prev,
+          episodes: prev.episodes.map(e =>
+            e.id === episodeId
+              ? { ...e, isAutoDownloadEnabled: enabled, autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED }
+              : e
+          )
+        }))
+      }
+    } catch (err) {
+      console.error("Error toggling episode auto-download:", err)
     }
   }
 
@@ -123,6 +236,7 @@ export function SeriesDetailPage() {
   }
 
   const posterUrl = series.posterPath || null
+  const isAutoDownloadEnabled = series.isAutoDownloadEnabled
 
   return (
     <Layout>
@@ -162,10 +276,19 @@ export function SeriesDetailPage() {
               <div>
                 <h1 className="text-3xl font-bold mb-2">{series.title}</h1>
               </div>
-              <Button onClick={handleRefresh} variant="outline">
-                <RefreshCw size={18} className="mr-2" />
-                <span>Refresh</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mr-4">
+                  <span className="text-sm text-muted-foreground">Auto Download</span>
+                  <Checkbox
+                    checked={isAutoDownloadEnabled}
+                    onCheckedChange={handleToggleSeriesAutoDownload}
+                  />
+                </div>
+                <Button onClick={handleRefresh} variant="outline">
+                  <RefreshCw size={18} className="mr-2" />
+                  <span>Refresh</span>
+                </Button>
+              </div>
             </div>
 
             {/* Calculate monitored seasons episode count */}
@@ -173,7 +296,7 @@ export function SeriesDetailPage() {
               const monitoredSeasons = series.seasons?.filter(s => s.monitored) || []
               const monitoredEpisodeCount = monitoredSeasons.reduce((sum, s) => sum + (s.episodeFileCount || 0), 0)
               const totalMonitoredEpisodes = monitoredSeasons.reduce((sum, s) => sum + (s.totalEpisodeCount || 0), 0)
-              
+
               return (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <Card>
@@ -204,6 +327,60 @@ export function SeriesDetailPage() {
               )
             })()}
 
+            {/* AutoAnime Status Card */}
+            {downloadStatus && (
+              <Card className="mb-6">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Download className="h-5 w-5" />
+                    AutoAnime Status
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{downloadStatus.enabledCount}</p>
+                      <p className="text-xs text-muted-foreground">Enabled</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-green-500">{downloadStatus.downloadedCount}</p>
+                      <p className="text-xs text-muted-foreground">Downloaded</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-blue-500">{downloadStatus.downloadingCount}</p>
+                      <p className="text-xs text-muted-foreground">Downloading</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-yellow-500">{downloadStatus.pendingCount}</p>
+                      <p className="text-xs text-muted-foreground">Pending</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-red-500">{downloadStatus.failedCount}</p>
+                      <p className="text-xs text-muted-foreground">Failed</p>
+                    </div>
+                  </div>
+                  {isAutoDownloadEnabled && downloadStatus.totalEpisodes > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Overall Progress
+                        </span>
+                        <span className="font-medium">
+                          {Math.round((downloadStatus.downloadedCount / downloadStatus.totalEpisodes) * 100)}%
+                        </span>
+                      </div>
+                      <div className="mt-2 h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 transition-all"
+                          style={{ width: `${(downloadStatus.downloadedCount / downloadStatus.totalEpisodes) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {series.overview && (
               <Card>
                 <CardContent className="p-4">
@@ -223,10 +400,13 @@ export function SeriesDetailPage() {
               .filter(s => s.monitored)
               .sort((a, b) => a.seasonNumber - b.seasonNumber)
               .map(season => (
-                <SeasonCard 
-                  key={season.id} 
-                  season={season} 
-                  episodes={series.episodes.filter(e => e.seasonNumber === season.seasonNumber)} 
+                <SeasonCard
+                  key={season.id}
+                  season={season}
+                  episodes={series.episodes.filter(e => e.seasonNumber === season.seasonNumber)}
+                  seriesId={parseInt(id)}
+                  onToggleSeasonAutoDownload={handleToggleSeasonAutoDownload}
+                  onToggleEpisodeAutoDownload={handleToggleEpisodeAutoDownload}
                 />
               ))}
           </div>

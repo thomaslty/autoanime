@@ -1,6 +1,6 @@
 const qbittorrentService = require('../services/qbittorrentService');
 const { db } = require('../db/db');
-const { qbittorrentDownloads, sonarrSeries } = require('../db/schema');
+const { qbittorrentDownloads } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 
 const getStatus = async (req, res) => {
@@ -25,7 +25,7 @@ const getDownloads = async (req, res) => {
 
 const addMagnet = async (req, res) => {
   try {
-    const { magnet, category = 'autoanime', sonarrSeriesId } = req.body;
+    const { magnet, category = 'autoanime', seriesId } = req.body;
     if (!magnet) {
       return res.status(400).json({ error: 'Magnet link is required' });
     }
@@ -43,7 +43,7 @@ const addMagnet = async (req, res) => {
       await db.insert(qbittorrentDownloads).values({
         torrentHash,
         magnetLink: magnet,
-        sonarrSeriesId: sonarrSeriesId || null,
+        seriesId: seriesId || null,
         category,
         status: 'downloading',
         createdAt: now,

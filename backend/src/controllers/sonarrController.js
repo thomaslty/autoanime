@@ -1,7 +1,8 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
-const { sonarrSeries, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('../db/schema');
+const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
+const AutoDownloadStatus = require('../enums/autoDownloadStatus');
 
 const extractImageUrl = (images, coverType) => {
   const image = images?.find(img => img.coverType === coverType);
@@ -17,10 +18,10 @@ const parseTimestamp = (dateString) => {
 const syncSeriesImages = async (seriesId, images, now) => {
   if (!images || images.length === 0) return;
   
-  await db.delete(seriesImages).where(eq(seriesImages.sonarrSeriesId, seriesId));
+  await db.delete(seriesImages).where(eq(seriesImages.seriesId, seriesId));
   
   const imageRecords = images.map(img => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     coverType: img.coverType,
     url: img.url,
     remoteUrl: img.remoteUrl,
@@ -36,10 +37,10 @@ const syncSeriesImages = async (seriesId, images, now) => {
 const syncAlternateTitles = async (seriesId, alternateTitles, now) => {
   if (!alternateTitles || alternateTitles.length === 0) return;
   
-  await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.sonarrSeriesId, seriesId));
+  await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, seriesId));
   
   const titleRecords = alternateTitles.map(alt => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     title: alt.title,
     sceneSeasonNumber: alt.sceneSeasonNumber,
     createdAt: now,
@@ -54,10 +55,10 @@ const syncAlternateTitles = async (seriesId, alternateTitles, now) => {
 const syncSeasons = async (seriesId, seasons, now) => {
   if (!seasons || seasons.length === 0) return;
   
-  await db.delete(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, seriesId));
+  await db.delete(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
   
   const seasonRecords = seasons.map(season => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     seasonNumber: season.seasonNumber,
     monitored: season.monitored,
     episodeCount: season.statistics?.episodeCount,
@@ -83,18 +84,18 @@ const syncEpisodes = async (seriesId, sonarrSeriesId, now) => {
     if (!episodes || episodes.length === 0) return;
     
     // Get season mappings for this series
-    const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, seriesId));
+    const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
     const seasonIdMap = {};
     for (const season of seasons) {
       seasonIdMap[season.seasonNumber] = season.id;
     }
     
     // Delete existing episodes for this series
-    await db.delete(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, seriesId));
+    await db.delete(seriesEpisodes).where(eq(seriesEpisodes.seriesId, seriesId));
     
     // Insert new episode records
     const episodeRecords = episodes.map(episode => ({
-      sonarrSeriesId: seriesId,
+      seriesId: seriesId,
       seasonId: seasonIdMap[episode.seasonNumber] || null,
       sonarrEpisodeId: episode.id,
       title: episode.title,
@@ -181,8 +182,8 @@ const getStatus = async (req, res) => {
 
 const getSeries = async (req, res) => {
   try {
-    const series = await db.select().from(sonarrSeries).orderBy(sonarrSeries.title);
-    res.json(series);
+    const allSeries = await db.select().from(series).orderBy(series.title);
+    res.json(allSeries);
   } catch (error) {
     console.error('Error fetching series:', error);
     res.status(500).json({ error: 'Failed to fetch series' });
@@ -192,20 +193,20 @@ const getSeries = async (req, res) => {
 const getSeriesById = async (req, res) => {
   try {
     const { id } = req.params;
-    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
-    if (series.length === 0) {
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
     
     const [images, alternateTitles, seasons, episodes] = await Promise.all([
-      db.select().from(seriesImages).where(eq(seriesImages.sonarrSeriesId, parseInt(id))),
-      db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.sonarrSeriesId, parseInt(id))),
-      db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, parseInt(id))),
-      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, parseInt(id)))
+      db.select().from(seriesImages).where(eq(seriesImages.seriesId, parseInt(id))),
+      db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, parseInt(id))),
+      db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, parseInt(id))),
+      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.seriesId, parseInt(id)))
     ]);
     
     res.json({
-      ...series[0],
+      ...seriesResult[0],
       images,
       alternateTitles,
       seasons,
@@ -223,17 +224,17 @@ const syncSeries = async (req, res) => {
     const now = new Date();
 
     for (const item of sonarrData) {
-      const existing = await db.select().from(sonarrSeries).where(eq(sonarrSeries.sonarrId, item.id));
+      const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
       const seriesData = getSeriesData(item, now);
 
       let seriesId;
       if (existing.length > 0) {
         seriesId = existing[0].id;
-        await db.update(sonarrSeries)
+        await db.update(series)
           .set(seriesData)
-          .where(eq(sonarrSeries.id, seriesId));
+          .where(eq(series.id, seriesId));
       } else {
-        const result = await db.insert(sonarrSeries).values(seriesData).returning({ id: sonarrSeries.id });
+        const result = await db.insert(series).values(seriesData).returning({ id: series.id });
         seriesId = result[0].id;
       }
 
@@ -263,12 +264,12 @@ const triggerRefresh = async (req, res) => {
     const { id } = req.params;
     const sonarrId = parseInt(id);
 
-    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
-    if (series.length === 0) {
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
 
-    const result = await sonarrService.refreshSeries(series[0].sonarrId);
+    const result = await sonarrService.refreshSeries(seriesResult[0].sonarrId);
     res.json({ success: true, message: 'Refresh triggered', command: result });
   } catch (error) {
     console.error('Error triggering refresh:', error);
@@ -279,22 +280,22 @@ const triggerRefresh = async (req, res) => {
 const getSeriesEpisodes = async (req, res) => {
   try {
     const { id } = req.params;
-    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
-    if (series.length === 0) {
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
 
     const [episodes, seasons] = await Promise.all([
-      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.sonarrSeriesId, parseInt(id))),
-      db.select().from(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, parseInt(id)))
+      db.select().from(seriesEpisodes).where(eq(seriesEpisodes.seriesId, parseInt(id))),
+      db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, parseInt(id)))
     ]);
 
     // Group episodes by season
     const episodesBySeason = {};
-    for (const season of seasons) {
-      episodesBySeason[season.seasonNumber] = {
-        season,
-        episodes: episodes.filter(e => e.seasonNumber === season.seasonNumber)
+    for (const seasonItem of seasons) {
+      episodesBySeason[seasonItem.seasonNumber] = {
+        season: seasonItem,
+        episodes: episodes.filter(e => e.seasonNumber === seasonItem.seasonNumber)
       };
     }
 
@@ -313,23 +314,121 @@ const getSeriesEpisodes = async (req, res) => {
 const syncSeriesEpisodes = async (req, res) => {
   try {
     const { id } = req.params;
-    const series = await db.select().from(sonarrSeries).where(eq(sonarrSeries.id, id));
-    if (series.length === 0) {
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
 
     const now = new Date();
-    const episodeCount = await syncEpisodes(series[0].id, series[0].sonarrId, now);
+    const episodeCount = await syncEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
 
     res.json({
       success: true,
-      message: `Synced ${episodeCount || 0} episodes for series ${series[0].title}`,
+      message: `Synced ${episodeCount || 0} episodes for series ${seriesResult[0].title}`,
       seriesId: parseInt(id),
       syncedAt: now
     });
   } catch (error) {
     console.error('Error syncing episodes:', error);
     res.status(500).json({ error: `Failed to sync episodes: ${error.message}` });
+  }
+};
+
+const toggleSeriesAutoDownload = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body;
+
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const updatedSeries = await sonarrService.toggleSeriesAutoDownload(parseInt(id), enabled);
+    const downloadStatus = await sonarrService.getSeriesDownloadStatus(parseInt(id));
+
+    res.json({
+      success: true,
+      series: updatedSeries,
+      downloadStatus
+    });
+  } catch (error) {
+    console.error('Error toggling series auto-download:', error);
+    res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
+  }
+};
+
+const toggleSeasonAutoDownload = async (req, res) => {
+  try {
+    const { seriesId, seasonNumber } = req.params;
+    const { enabled } = req.body;
+
+    const seriesResult = await db.select().from(series).where(eq(series.id, seriesId));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const updatedSeason = await sonarrService.toggleSeasonAutoDownload(
+      parseInt(seriesId),
+      parseInt(seasonNumber),
+      enabled
+    );
+    const downloadStatus = await sonarrService.getSeasonDownloadStatus(
+      parseInt(seriesId),
+      parseInt(seasonNumber)
+    );
+
+    res.json({
+      success: true,
+      season: updatedSeason,
+      downloadStatus
+    });
+  } catch (error) {
+    console.error('Error toggling season auto-download:', error);
+    res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
+  }
+};
+
+const toggleEpisodeAutoDownload = async (req, res) => {
+  try {
+    const { episodeId } = req.params;
+    const { enabled } = req.body;
+
+    const episode = await db.select().from(seriesEpisodes).where(eq(seriesEpisodes.id, episodeId));
+    if (episode.length === 0) {
+      return res.status(404).json({ error: 'Episode not found' });
+    }
+
+    const updatedEpisode = await sonarrService.toggleEpisodeAutoDownload(parseInt(episodeId), enabled);
+
+    res.json({
+      success: true,
+      episode: updatedEpisode
+    });
+  } catch (error) {
+    console.error('Error toggling episode auto-download:', error);
+    res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
+  }
+};
+
+const getSeriesAutoDownloadStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const downloadStatus = await sonarrService.getSeriesDownloadStatus(parseInt(id));
+
+    res.json({
+      seriesId: parseInt(id),
+      ...downloadStatus
+    });
+  } catch (error) {
+    console.error('Error getting series auto-download status:', error);
+    res.status(500).json({ error: `Failed to get auto-download status: ${error.message}` });
   }
 };
 
@@ -340,5 +439,9 @@ module.exports = {
   syncSeries,
   triggerRefresh,
   getSeriesEpisodes,
-  syncSeriesEpisodes
+  syncSeriesEpisodes,
+  toggleSeriesAutoDownload,
+  toggleSeasonAutoDownload,
+  toggleEpisodeAutoDownload,
+  getSeriesAutoDownloadStatus
 };

@@ -1,24 +1,87 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { ChevronDown, CheckCircle2, Clock, AlertCircle, FileVideo, Eye } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ChevronDown, CheckCircle2, Clock, AlertCircle, FileVideo, Eye, Download, XCircle, SkipForward } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-function EpisodeRow({ episode }) {
+const AutoDownloadStatus = {
+  DISABLED: 0,
+  PENDING: 1,
+  DOWNLOADING: 2,
+  DOWNLOADED: 3,
+  FAILED: 4,
+  SKIPPED: 5
+}
+
+function getStatusIcon(status, hasFile) {
+  if (hasFile) return <CheckCircle2 className="h-4 w-4 text-green-500" />
+
+  switch (status) {
+    case AutoDownloadStatus.DOWNLOADING:
+      return <Download className="h-4 w-4 text-blue-500" />
+    case AutoDownloadStatus.PENDING:
+      return <Clock className="h-4 w-4 text-yellow-500" />
+    case AutoDownloadStatus.FAILED:
+      return <XCircle className="h-4 w-4 text-red-500" />
+    case AutoDownloadStatus.SKIPPED:
+      return <SkipForward className="h-4 w-4 text-gray-500" />
+    case AutoDownloadStatus.DISABLED:
+    default:
+      return <AlertCircle className="h-4 w-4 text-muted-foreground" />
+  }
+}
+
+function getStatusText(status, hasFile) {
+  if (hasFile) return "Downloaded"
+
+  switch (status) {
+    case AutoDownloadStatus.DOWNLOADING:
+      return "Downloading"
+    case AutoDownloadStatus.PENDING:
+      return "Pending"
+    case AutoDownloadStatus.FAILED:
+      return "Failed"
+    case AutoDownloadStatus.SKIPPED:
+      return "Skipped"
+    case AutoDownloadStatus.DISABLED:
+    default:
+      return "Not Monitored"
+  }
+}
+
+function getAggregatedStatus(episodes) {
+  if (episodes.length === 0) return AutoDownloadStatus.DISABLED
+
+  const enabledEpisodes = episodes.filter(e => e.isAutoDownloadEnabled)
+  if (enabledEpisodes.length === 0) return AutoDownloadStatus.DISABLED
+
+  const statusCounts = {}
+  enabledEpisodes.forEach(e => {
+    const status = e.autoDownloadStatus || AutoDownloadStatus.PENDING
+    statusCounts[status] = (statusCounts[status] || 0) + 1
+  })
+
+  if (statusCounts[AutoDownloadStatus.DOWNLOADING] > 0) {
+    return AutoDownloadStatus.DOWNLOADING
+  } else if (statusCounts[AutoDownloadStatus.PENDING] > 0) {
+    return AutoDownloadStatus.PENDING
+  } else if (statusCounts[AutoDownloadStatus.FAILED] > 0) {
+    return AutoDownloadStatus.FAILED
+  } else if (statusCounts[AutoDownloadStatus.DOWNLOADED] === enabledEpisodes.length) {
+    return AutoDownloadStatus.DOWNLOADED
+  } else if (statusCounts[AutoDownloadStatus.SKIPPED] > 0) {
+    return AutoDownloadStatus.SKIPPED
+  }
+
+  return AutoDownloadStatus.DISABLED
+}
+
+function EpisodeRow({ episode, seriesId, onToggleAutoDownload }) {
   const hasFile = episode.hasFile
   const isMonitored = episode.monitored
-
-  const getStatusIcon = () => {
-    if (hasFile) return <CheckCircle2 className="h-4 w-4 text-green-500" />
-    if (isMonitored) return <Clock className="h-4 w-4 text-yellow-500" />
-    return <AlertCircle className="h-4 w-4 text-muted-foreground" />
-  }
-
-  const getStatusText = () => {
-    if (hasFile) return "Downloaded"
-    if (isMonitored) return "Pending"
-    return "Not Monitored"
-  }
+  const isAutoDownloadEnabled = episode.isAutoDownloadEnabled
+  const status = episode.autoDownloadStatus || AutoDownloadStatus.DISABLED
 
   return (
     <div className={cn(
@@ -40,19 +103,78 @@ function EpisodeRow({ episode }) {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        {getStatusIcon()}
-        <span className="text-xs text-muted-foreground">{getStatusText()}</span>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {getStatusIcon(status, hasFile)}
+          <span className="text-xs text-muted-foreground">{getStatusText(status, hasFile)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">Auto</span>
+          <Checkbox
+            checked={isAutoDownloadEnabled}
+            onCheckedChange={(checked) => onToggleAutoDownload(episode.id, checked)}
+          />
+        </div>
       </div>
     </div>
   )
 }
 
-export function SeasonCard({ season, episodes }) {
+export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownload, onToggleEpisodeAutoDownload }) {
   const monitoredEpisodes = episodes.filter(e => e.monitored)
   const downloadedCount = monitoredEpisodes.filter(e => e.hasFile).length
   const totalCount = monitoredEpisodes.length
   const progress = totalCount > 0 ? (downloadedCount / totalCount) * 100 : 0
+
+  const isAutoDownloadEnabled = season.isAutoDownloadEnabled
+  const aggregatedStatus = getAggregatedStatus(episodes)
+
+  const getStatusBadge = () => {
+    if (!isAutoDownloadEnabled) {
+      return (
+        <Badge variant="secondary" className="bg-muted text-muted-foreground">
+          Auto Disabled
+        </Badge>
+      )
+    }
+
+    switch (aggregatedStatus) {
+      case AutoDownloadStatus.DOWNLOADING:
+        return (
+          <Badge variant="secondary" className="bg-blue-500/20 text-blue-500 hover:bg-blue-500/30">
+            <Download className="h-3 w-3 mr-1" />
+            Downloading
+          </Badge>
+        )
+      case AutoDownloadStatus.PENDING:
+        return (
+          <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        )
+      case AutoDownloadStatus.DOWNLOADED:
+        return (
+          <Badge variant="secondary" className="bg-green-500/20 text-green-500 hover:bg-green-500/30">
+            <CheckCircle2 className="h-3 w-3 mr-1" />
+            Complete
+          </Badge>
+        )
+      case AutoDownloadStatus.FAILED:
+        return (
+          <Badge variant="secondary" className="bg-red-500/20 text-red-500 hover:bg-red-500/30">
+            <XCircle className="h-3 w-3 mr-1" />
+            Failed
+          </Badge>
+        )
+      default:
+        return (
+          <Badge variant="secondary" className="bg-muted text-muted-foreground">
+            Auto Enabled
+          </Badge>
+        )
+    }
+  }
 
   return (
     <Collapsible defaultOpen={season.monitored}>
@@ -61,7 +183,14 @@ export function SeasonCard({ season, episodes }) {
           <CardHeader className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <CardTitle className="text-lg">Season {season.seasonNumber}</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={isAutoDownloadEnabled}
+                    onCheckedChange={(checked) => onToggleSeasonAutoDownload(season.seasonNumber, checked)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <CardTitle className="text-lg">Season {season.seasonNumber}</CardTitle>
+                </div>
                 {season.monitored ? (
                   <Badge variant="secondary" className="bg-green-500/20 text-green-500 hover:bg-green-500/30">
                     <Eye className="h-3 w-3 mr-1" />
@@ -72,6 +201,7 @@ export function SeasonCard({ season, episodes }) {
                     Not Monitored
                   </Badge>
                 )}
+                {getStatusBadge()}
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
@@ -89,7 +219,7 @@ export function SeasonCard({ season, episodes }) {
             </div>
             {season.monitored && (
               <div className="mt-2 h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                <div 
+                <div
                   className={cn(
                     "h-full transition-all",
                     progress === 100 ? "bg-green-500" : "bg-yellow-500"
@@ -107,7 +237,12 @@ export function SeasonCard({ season, episodes }) {
                 {monitoredEpisodes
                   .sort((a, b) => a.episodeNumber - b.episodeNumber)
                   .map(episode => (
-                    <EpisodeRow key={episode.id} episode={episode} />
+                    <EpisodeRow
+                      key={episode.id}
+                      episode={episode}
+                      seriesId={seriesId}
+                      onToggleAutoDownload={onToggleEpisodeAutoDownload}
+                    />
                   ))}
               </div>
             ) : (

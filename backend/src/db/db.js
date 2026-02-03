@@ -12,7 +12,7 @@ const db = drizzle(pool, { schema });
 const testConnection = async () => {
   try {
     const client = await pool.connect();
-    console.log('Database connected successfully');
+    //console.log('Database connected successfully');
     client.release();
     return true;
   } catch (error) {

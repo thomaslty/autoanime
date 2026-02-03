@@ -7,7 +7,7 @@ const { testConnection } = require('./db/db');
 const sonarrService = require('./services/sonarrService');
 const qbittorrentService = require('./services/qbittorrentService');
 const { db } = require('./db/db');
-const { sonarrSeries, seriesImages, seriesAlternateTitles, seriesSeasons } = require('./db/schema');
+const { series, seriesImages, seriesAlternateTitles, seriesSeasons } = require('./db/schema');
 const { eq } = require('drizzle-orm');
 
 const app = express();
@@ -61,10 +61,10 @@ const extractImageUrl = (images, coverType) => {
 const syncSeriesImages = async (seriesId, images, now) => {
   if (!images || images.length === 0) return;
   
-  await db.delete(seriesImages).where(eq(seriesImages.sonarrSeriesId, seriesId));
+  await db.delete(seriesImages).where(eq(seriesImages.seriesId, seriesId));
   
   const imageRecords = images.map(img => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     coverType: img.coverType,
     url: img.url,
     remoteUrl: img.remoteUrl,
@@ -80,10 +80,10 @@ const syncSeriesImages = async (seriesId, images, now) => {
 const syncAlternateTitles = async (seriesId, alternateTitles, now) => {
   if (!alternateTitles || alternateTitles.length === 0) return;
   
-  await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.sonarrSeriesId, seriesId));
+  await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, seriesId));
   
   const titleRecords = alternateTitles.map(alt => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     title: alt.title,
     sceneSeasonNumber: alt.sceneSeasonNumber,
     createdAt: now,
@@ -98,10 +98,10 @@ const syncAlternateTitles = async (seriesId, alternateTitles, now) => {
 const syncSeasons = async (seriesId, seasons, now) => {
   if (!seasons || seasons.length === 0) return;
   
-  await db.delete(seriesSeasons).where(eq(seriesSeasons.sonarrSeriesId, seriesId));
+  await db.delete(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
   
   const seasonRecords = seasons.map(season => ({
-    sonarrSeriesId: seriesId,
+    seriesId: seriesId,
     seasonNumber: season.seasonNumber,
     monitored: season.monitored,
     episodeCount: season.statistics?.episodeCount,
@@ -177,17 +177,17 @@ const syncOnStartup = async () => {
     const now = new Date();
 
     for (const item of sonarrData) {
-      const existing = await db.select().from(sonarrSeries).where(eq(sonarrSeries.sonarrId, item.id));
+      const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
       const seriesData = getSeriesData(item, now);
 
       let seriesId;
       if (existing.length > 0) {
         seriesId = existing[0].id;
-        await db.update(sonarrSeries)
+        await db.update(series)
           .set(seriesData)
-          .where(eq(sonarrSeries.id, seriesId));
+          .where(eq(series.id, seriesId));
       } else {
-        const result = await db.insert(sonarrSeries).values(seriesData).returning({ id: sonarrSeries.id });
+        const result = await db.insert(series).values(seriesData).returning({ id: series.id });
         seriesId = result[0].id;
       }
 

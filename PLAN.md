@@ -1,183 +1,177 @@
-# AutoAnime Series Episode Tracking Enhancement
+# Database Rename Plan: `sonarr_series` → `series`
 
-## Overview
+This plan documents all changes needed to rename the `sonarr_series` table to `series` and update all related references throughout the codebase.
 
-Enhance the autoanime application to track individual episodes and display season/episode information on the series detail page.
-
-## Current State
-
-### Database
-- `sonarr_series` table: stores series metadata with aggregate statistics (`season_count`, `episode_count`, `total_episode_count`, `episode_file_count`)
-- `series_seasons` table: stores per-season statistics synced from Sonarr (`episode_count`, `episode_file_count`, `total_episode_count`, `monitored`)
-- **Missing**: individual episode tracking for autoanime download status
-
-### Backend
-- `sonarrController.js`: syncs series, seasons, images, and alternate titles from Sonarr API
-- `sonarrService.js`: provides API methods for Sonarr (`getAllSeries`, `getSeriesById`, etc.)
-- **Missing**: episode-level sync from Sonarr `/api/v3/episode` endpoint
-
-### Frontend
-- `SeriesDetailPage.jsx`: displays series overview with status cards (status, seasons, episodes, monitored)
-- **Missing**: season/episode list UI grouped by monitored status
+> [!NOTE]
+> Since the database will be dropped and recreated, no migration files are needed. Just regenerate migrations after schema changes using `npm run db:generate`.
 
 ---
 
-## Phase 1: Database Schema - Individual Episode Tracking
+## Summary of Changes
 
-### 1.1 Create `series_episodes` table
-
-Create new table in `backend/src/db/schema.js`:
-
-```javascript
-const seriesEpisodes = pgTable('series_episodes', {
-  id: serial('id').primaryKey(),
-  sonarrSeriesId: integer('sonarr_series_id').notNull().references(() => sonarrSeries.id, { onDelete: 'cascade' }),
-  seasonId: integer('season_id').references(() => seriesSeasons.id, { onDelete: 'cascade' }),
-  sonarrEpisodeId: integer('sonarr_episode_id').notNull(),
-  
-  // Episode metadata
-  title: text('title'),
-  episodeNumber: integer('episode_number').notNull(),
-  seasonNumber: integer('season_number').notNull(),
-  overview: text('overview'),
-  airDate: timestamp('air_date'),
-  
-  // Status flags from Sonarr
-  hasFile: boolean('has_file').default(false),
-  monitored: boolean('monitored').default(true),
-  
-  // AutoAnime-specific tracking
-  autoDownloadStatus: varchar('auto_download_status'), // 'pending', 'downloading', 'completed', 'failed'
-  downloadedAt: timestamp('downloaded_at'),
-  
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_episodes_series').on(table.sonarrSeriesId),
-  index('idx_episodes_season').on(table.seasonId),
-  index('idx_episodes_sonarr_id').on(table.sonarrEpisodeId),
-]);
-```
-
-### 1.2 Generate and Run Migration
-
-```bash
-cd backend
-npm run db:generate
-npm run db:migrate
-```
+| Change Type | Count |
+|-------------|-------|
+| Table rename | 1 |
+| Column renames (`sonarr_series_id` → `series_id`) | 6 |
+| Index renames | 6 |
+| Foreign key constraint renames | 6 |
+| JavaScript variable/export renames | Multiple |
 
 ---
 
-## Phase 2: Backend - Episode Sync from Sonarr
+## 1. Schema File Changes
 
-### 2.1 Add Episode API Methods to `sonarrService.js`
+### File: [schema.js](file:///home/coder/project/autoanime/backend/src/db/schema.js)
 
-```javascript
-// Get all episodes for a series
-const getEpisodesBySeries = async (seriesId) => {
-  // GET /api/v3/episode?seriesId={seriesId}
-};
+#### 1.1 Rename Table Definition (Line 14)
 
-// Get specific episode
-const getEpisode = async (episodeId) => {
-  // GET /api/v3/episode/{id}
-};
+```diff
+-const sonarrSeries = pgTable('sonarr_series', {
++const series = pgTable('series', {
 ```
 
-### 2.2 Update `sonarrController.js`
+#### 1.2 Rename Index Names (Lines 62-67)
 
-- Add `syncEpisodes()` function to sync episodes from Sonarr API
-- Update `syncSeries()` to call `syncEpisodes()` after syncing seasons
-- Add `getSeriesEpisodes()` endpoint to return episodes grouped by season
-
-### 2.3 Add New Routes
-
-In `backend/src/routes/sonarr.js`:
-- `GET /api/sonarr/series/:id/episodes` - get all episodes for a series
-- `POST /api/sonarr/series/:id/episodes/sync` - sync episodes from Sonarr
-
----
-
-## Phase 3: Frontend - Season/Episode List Display
-
-### 3.1 Update `SeriesDetailPage.jsx`
-
-Add season/episode section below the overview card:
-
-```jsx
-{/* Season/Episode List */}
-<div className="mt-6 space-y-4">
-  {seasons
-    .filter(s => s.monitored)
-    .sort((a, b) => a.seasonNumber - b.seasonNumber)
-    .map(season => (
-      <SeasonCard 
-        key={season.id} 
-        season={season} 
-        episodes={episodes.filter(e => e.seasonNumber === season.seasonNumber)} 
-      />
-    ))}
-</div>
+```diff
+-  index('idx_sonarr_series_title').on(table.title),
+-  index('idx_sonarr_series_status').on(table.status),
+-  index('idx_sonarr_series_last_synced').on(table.lastSyncedAt),
+-  index('idx_sonarr_series_imdb').on(table.imdbId),
+-  index('idx_sonarr_series_tmdb').on(table.tmdbId),
+-  index('idx_sonarr_series_tvdb').on(table.tvdbId),
++  index('idx_series_title').on(table.title),
++  index('idx_series_status').on(table.status),
++  index('idx_series_last_synced').on(table.lastSyncedAt),
++  index('idx_series_imdb').on(table.imdbId),
++  index('idx_series_tmdb').on(table.tmdbId),
++  index('idx_series_tvdb').on(table.tvdbId),
 ```
 
-### 3.2 Create `SeasonCard` Component
+#### 1.3 Update Foreign Key References
 
-Display:
-- Season header with number and monitored status
-- Episode count: `{episodeFileCount}/{totalEpisodeCount}`
-- Expandable episode list grouped by `monitored == true`
-- Progress bar showing download percentage
+| Table | Line | Change |
+|-------|------|--------|
+| `rss_anime_configs` | 86 | `sonarr_series_id` → `series_id`, reference `series.id` |
+| `qbittorrent_downloads` | 117 | `sonarr_series_id` → `series_id`, reference `series.id` |
+| `series_images` | 135 | `sonarr_series_id` → `series_id`, reference `series.id` |
+| `series_alternate_titles` | 148 | `sonarr_series_id` → `series_id`, reference `series.id` |
+| `series_seasons` | 160 | `sonarr_series_id` → `series_id`, reference `series.id` |
+| `series_episodes` | 181 | `sonarr_series_id` → `series_id`, reference `series.id` |
 
-### 3.3 Episode Count Logic
+**Example change:**
 
-Per user requirement:
-> "total episode count should be sum of all seasons with `monitored==true`"
+```diff
+-  sonarrSeriesId: integer('sonarr_series_id').references(() => sonarrSeries.id),
++  seriesId: integer('series_id').references(() => series.id),
+```
 
-Calculate in frontend:
-```javascript
-const totalMonitoredEpisodes = seasons
-  .filter(s => s.monitored)
-  .reduce((sum, s) => sum + (s.totalEpisodeCount || 0), 0);
+#### 1.4 Update Index References on Foreign Keys
+
+Update indexes that reference `sonarrSeriesId` to use `seriesId`:
+
+| Table | Line | Change |
+|-------|------|--------|
+| `qbittorrent_downloads` | 130 | `table.sonarrSeriesId` → `table.seriesId` |
+| `series_images` | 142 | `table.sonarrSeriesId` → `table.seriesId` |
+| `series_alternate_titles` | 154 | `table.sonarrSeriesId` → `table.seriesId` |
+| `series_seasons` | 175 | `table.sonarrSeriesId` → `table.seriesId` |
+| `series_episodes` | 204 | `table.sonarrSeriesId` → `table.seriesId` |
+
+#### 1.5 Update Module Exports (Lines 209-220)
+
+```diff
+ module.exports = {
+-  sonarrSeries,
++  series,
+   rssSources,
+   rssAnimeConfigs,
+   rssFeedItems,
+   qbittorrentDownloads,
+   settings,
+   seriesImages,
+   seriesAlternateTitles,
+   seriesSeasons,
+   seriesEpisodes
+ };
 ```
 
 ---
 
-## Phase 4: AutoAnime Download Status Tracking
+## 2. Service & Controller Updates
 
-### 4.1 Episode Status Values
+Update all imports and usages of `sonarrSeries` and `sonarrSeriesId`.
 
-| Status | Description |
-|--------|-------------|
-| `null` | Not tracked by autoanime |
-| `pending` | Queued for download |
-| `downloading` | Currently downloading via qBittorrent |
-| `completed` | Downloaded successfully |
-| `failed` | Download failed |
+### 2.1 File: [app.js](file:///home/coder/project/autoanime/backend/src/app.js)
 
-### 4.2 Integration Points
+| Line | Change |
+|------|--------|
+| 10 | Import `series` instead of `sonarrSeries` |
+| 64, 83, 101 | `seriesImages.sonarrSeriesId` → `seriesImages.seriesId` |
+| 67, 86, 104 | Object property `sonarrSeriesId` → `seriesId` |
+| 180, 186, 188, 190 | `sonarrSeries` → `series` |
 
-- Link `seriesEpisodes.autoDownloadStatus` with `qbittorrent_downloads` table
-- Update status when RSS feed matches an episode
-- Track download progress from qBittorrent API
+### 2.2 File: [sonarrService.js](file:///home/coder/project/autoanime/backend/src/services/sonarrService.js)
+
+| Line | Change |
+|------|--------|
+| 3 | Import `series` instead of `sonarrSeries` |
+| 141, 147, 149 | `sonarrSeries` → `series` |
+| 158, 185, 210, 233 | `seriesSeasons.sonarrSeriesId` / `seriesEpisodes.sonarrSeriesId` → `.seriesId` |
+
+### 2.3 File: [sonarrController.js](file:///home/coder/project/autoanime/backend/src/controllers/sonarrController.js)
+
+| Line | Change |
+|------|--------|
+| 3 | Import `series` instead of `sonarrSeries` |
+| 21, 40, 58, 87, 94 | `.sonarrSeriesId` → `.seriesId` |
+| 24, 43, 61 | Object property `sonarrSeriesId` → `seriesId` |
+| 80, 83 | Parameter rename if needed |
+
+### 2.4 File: [rssController.js](file:///home/coder/project/autoanime/backend/src/controllers/rssController.js)
+
+| Line | Change |
+|------|--------|
+| 125, 134 | `sonarrSeriesId` → `seriesId` |
+| 148, 154 | `sonarrSeriesId` → `seriesId` |
+
+### 2.5 File: [qbittorrentController.js](file:///home/coder/project/autoanime/backend/src/controllers/qbittorrentController.js)
+
+| Line | Change |
+|------|--------|
+| 3 | Import `series` instead of `sonarrSeries` |
+| 28, 46 | `sonarrSeriesId` → `seriesId` |
 
 ---
 
-## References
+## 3. Post-Change Actions
 
-| Resource | Path |
-|----------|------|
-| Sonarr API v3 Spec | [@/api_docs/sonarr_v3.json](./api_docs/sonarr_v3.json) |
-| Sonarr Series Example | [@/api_docs/sonarr_series_example.json](./api_docs/sonarr_series_example.json) |
-| Database Schema | [@/backend/src/db/schema.js](./backend/src/db/schema.js) |
-| qBittorrent API | [@/api_docs/WebUI-API-(qBittorrent-5.0).md](./api_docs/WebUI-API-(qBittorrent-5.0).md) |
+1. **Delete existing migration files** in `backend/drizzle/`:
+   - `0000_pretty_sebastian_shaw.sql`
+   - `meta/0000_snapshot.json`
+   - Any other migration files
+
+2. **Regenerate migrations**:
+   ```bash
+   cd backend
+   npm run db:generate
+   ```
+
+3. **Drop and recreate the database**:
+   ```bash
+   npm run db:migrate
+   ```
 
 ---
 
-## Verification Checklist
+## 4. Verification Checklist
 
-- [ ] Migration runs without errors
-- [ ] Episodes sync from Sonarr API
-- [ ] Series detail page displays season list
-- [ ] Episode counts match Sonarr data
-- [ ] Only monitored seasons shown in default view
+- [ ] Schema file updated with new table name
+- [ ] All `sonarrSeriesId` columns renamed to `seriesId`  
+- [ ] All `sonarr_series_id` DB columns renamed to `series_id`
+- [ ] All index names updated
+- [ ] Module exports updated
+- [ ] All service/controller imports updated
+- [ ] All service/controller usages updated
+- [ ] Migration files regenerated
+- [ ] Database recreated successfully
+- [ ] Application runs without errors

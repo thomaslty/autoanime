@@ -122,7 +122,7 @@ const getAnimeConfigById = async (req, res) => {
 
 const createAnimeConfig = async (req, res) => {
   try {
-    const { name, url, rssSourceId, sonarrSeriesId, isEnabled } = req.body;
+    const { name, url, rssSourceId, seriesId, isEnabled } = req.body;
     if (!name || !url) {
       return res.status(400).json({ error: 'Name and URL are required' });
     }
@@ -131,7 +131,7 @@ const createAnimeConfig = async (req, res) => {
       name,
       url,
       rssSourceId: rssSourceId || null,
-      sonarrSeriesId: sonarrSeriesId || null,
+      seriesId: seriesId || null,
       isEnabled: isEnabled !== false,
       createdAt: now,
       updatedAt: now
@@ -145,13 +145,13 @@ const createAnimeConfig = async (req, res) => {
 
 const updateAnimeConfig = async (req, res) => {
   try {
-    const { name, url, rssSourceId, sonarrSeriesId, isEnabled } = req.body;
+    const { name, url, rssSourceId, seriesId, isEnabled } = req.body;
     const now = new Date();
     const updateData = { updatedAt: now };
     if (name !== undefined) updateData.name = name;
     if (url !== undefined) updateData.url = url;
     if (rssSourceId !== undefined) updateData.rssSourceId = rssSourceId;
-    if (sonarrSeriesId !== undefined) updateData.sonarrSeriesId = sonarrSeriesId;
+    if (seriesId !== undefined) updateData.seriesId = seriesId;
     if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
 
     const result = await db.update(rssAnimeConfigs)
