@@ -1,213 +1,130 @@
 const rssService = require('../services/rssService');
-const { db } = require('../db/db');
-const { rssAnimeConfigs } = require('../db/schema');
-const { eq } = require('drizzle-orm');
+const { getAvailableTemplates, getTemplateName } = require('../rss_parsers');
 
-const getSources = async (req, res) => {
+const getRss = async (req, res) => {
   try {
-    const sources = await rssService.getSources();
-    res.json(sources);
+    const feeds = await rssService.getAllRss();
+    res.json(feeds);
   } catch (error) {
-    console.error('Error fetching RSS sources:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS sources' });
+    console.error('Error fetching RSS feeds:', error);
+    res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 };
 
-const getSourceById = async (req, res) => {
+const getRssById = async (req, res) => {
   try {
-    const source = await rssService.getSourceById(req.params.id);
-    if (!source) {
-      return res.status(404).json({ error: 'Source not found' });
+    const feed = await rssService.getRssById(req.params.id);
+    if (!feed) {
+      return res.status(404).json({ error: 'RSS feed not found' });
     }
-    res.json(source);
+    res.json(feed);
   } catch (error) {
-    console.error('Error fetching RSS source:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS source' });
+    console.error('Error fetching RSS feed:', error);
+    res.status(500).json({ error: 'Failed to fetch RSS feed' });
   }
 };
 
-const createSource = async (req, res) => {
+const createRss = async (req, res) => {
   try {
-    const { name, url, isEnabled } = req.body;
+    const { name, description, url, templateId, isEnabled } = req.body;
     if (!name || !url) {
       return res.status(400).json({ error: 'Name and URL are required' });
     }
-    const source = await rssService.createSource({ name, url, isEnabled });
-    res.status(201).json(source);
+    const feed = await rssService.createRss({ name, description, url, templateId, isEnabled });
+    res.status(201).json(feed);
   } catch (error) {
-    console.error('Error creating RSS source:', error);
-    res.status(500).json({ error: 'Failed to create RSS source' });
+    console.error('Error creating RSS feed:', error);
+    res.status(500).json({ error: 'Failed to create RSS feed' });
   }
 };
 
-const updateSource = async (req, res) => {
+const updateRss = async (req, res) => {
   try {
-    const { name, url, isEnabled } = req.body;
-    const source = await rssService.updateSource(req.params.id, { name, url, isEnabled });
-    if (!source) {
-      return res.status(404).json({ error: 'Source not found' });
+    const { name, description, url, templateId, isEnabled } = req.body;
+    const feed = await rssService.updateRss(req.params.id, { name, description, url, templateId, isEnabled });
+    if (!feed) {
+      return res.status(404).json({ error: 'RSS feed not found' });
     }
-    res.json(source);
+    res.json(feed);
   } catch (error) {
-    console.error('Error updating RSS source:', error);
-    res.status(500).json({ error: 'Failed to update RSS source' });
+    console.error('Error updating RSS feed:', error);
+    res.status(500).json({ error: 'Failed to update RSS feed' });
   }
 };
 
-const deleteSource = async (req, res) => {
+const deleteRss = async (req, res) => {
   try {
-    await rssService.deleteSource(req.params.id);
+    await rssService.deleteRss(req.params.id);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting RSS source:', error);
-    res.status(500).json({ error: 'Failed to delete RSS source' });
+    console.error('Error deleting RSS feed:', error);
+    res.status(500).json({ error: 'Failed to delete RSS feed' });
   }
 };
 
-const toggleSource = async (req, res) => {
+const toggleRss = async (req, res) => {
   try {
-    const source = await rssService.toggleSource(req.params.id);
-    if (!source) {
-      return res.status(404).json({ error: 'Source not found' });
+    const feed = await rssService.toggleRss(req.params.id);
+    if (!feed) {
+      return res.status(404).json({ error: 'RSS feed not found' });
     }
-    res.json(source);
+    res.json(feed);
   } catch (error) {
-    console.error('Error toggling RSS source:', error);
-    res.status(500).json({ error: 'Failed to toggle RSS source' });
+    console.error('Error toggling RSS feed:', error);
+    res.status(500).json({ error: 'Failed to toggle RSS feed' });
   }
 };
 
-const fetchSource = async (req, res) => {
+const fetchRss = async (req, res) => {
   try {
-    const result = await rssService.fetchAndProcessSource(req.params.id);
+    const result = await rssService.fetchAndParseRss(req.params.id);
     res.json(result);
   } catch (error) {
-    console.error('Error fetching RSS source:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS source' });
+    console.error('Error fetching RSS feed:', error);
+    res.status(500).json({ error: 'Failed to fetch RSS feed' });
   }
 };
 
-const fetchAllSources = async (req, res) => {
+const fetchAllRss = async (req, res) => {
   try {
-    const results = await rssService.fetchAllSources();
+    const results = await rssService.fetchAllRss();
     res.json(results);
   } catch (error) {
-    console.error('Error fetching all RSS sources:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS sources' });
+    console.error('Error fetching all RSS feeds:', error);
+    res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 };
 
-const getAnimeConfigs = async (req, res) => {
+const getRssItems = async (req, res) => {
   try {
-    const configs = await db.select().from(rssAnimeConfigs).orderBy(rssAnimeConfigs.name);
-    res.json(configs);
+    const limit = parseInt(req.query.limit) || 100;
+    const items = await rssService.getRssItems(req.params.id, limit);
+    res.json(items);
   } catch (error) {
-    console.error('Error fetching RSS anime configs:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS anime configs' });
+    console.error('Error fetching RSS items:', error);
+    res.status(500).json({ error: 'Failed to fetch RSS items' });
   }
 };
 
-const getAnimeConfigById = async (req, res) => {
+const getTemplates = async (req, res) => {
   try {
-    const config = await db.select().from(rssAnimeConfigs).where(eq(rssAnimeConfigs.id, req.params.id)).limit(1);
-    if (config.length === 0) {
-      return res.status(404).json({ error: 'Config not found' });
-    }
-    res.json(config[0]);
+    const templates = getAvailableTemplates();
+    res.json(templates);
   } catch (error) {
-    console.error('Error fetching RSS anime config:', error);
-    res.status(500).json({ error: 'Failed to fetch RSS anime config' });
-  }
-};
-
-const createAnimeConfig = async (req, res) => {
-  try {
-    const { name, url, rssSourceId, seriesId, isEnabled } = req.body;
-    if (!name || !url) {
-      return res.status(400).json({ error: 'Name and URL are required' });
-    }
-    const now = new Date();
-    const result = await db.insert(rssAnimeConfigs).values({
-      name,
-      url,
-      rssSourceId: rssSourceId || null,
-      seriesId: seriesId || null,
-      isEnabled: isEnabled !== false,
-      createdAt: now,
-      updatedAt: now
-    }).returning();
-    res.status(201).json(result[0]);
-  } catch (error) {
-    console.error('Error creating RSS anime config:', error);
-    res.status(500).json({ error: 'Failed to create RSS anime config' });
-  }
-};
-
-const updateAnimeConfig = async (req, res) => {
-  try {
-    const { name, url, rssSourceId, seriesId, isEnabled } = req.body;
-    const now = new Date();
-    const updateData = { updatedAt: now };
-    if (name !== undefined) updateData.name = name;
-    if (url !== undefined) updateData.url = url;
-    if (rssSourceId !== undefined) updateData.rssSourceId = rssSourceId;
-    if (seriesId !== undefined) updateData.seriesId = seriesId;
-    if (isEnabled !== undefined) updateData.isEnabled = isEnabled;
-
-    const result = await db.update(rssAnimeConfigs)
-      .set(updateData)
-      .where(eq(rssAnimeConfigs.id, req.params.id))
-      .returning();
-    if (result.length === 0) {
-      return res.status(404).json({ error: 'Config not found' });
-    }
-    res.json(result[0]);
-  } catch (error) {
-    console.error('Error updating RSS anime config:', error);
-    res.status(500).json({ error: 'Failed to update RSS anime config' });
-  }
-};
-
-const deleteAnimeConfig = async (req, res) => {
-  try {
-    const result = await db.delete(rssAnimeConfigs).where(eq(rssAnimeConfigs.id, req.params.id));
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting RSS anime config:', error);
-    res.status(500).json({ error: 'Failed to delete RSS anime config' });
-  }
-};
-
-const toggleAnimeConfig = async (req, res) => {
-  try {
-    const config = await db.select().from(rssAnimeConfigs).where(eq(rssAnimeConfigs.id, req.params.id)).limit(1);
-    if (config.length === 0) {
-      return res.status(404).json({ error: 'Config not found' });
-    }
-    const now = new Date();
-    await db.update(rssAnimeConfigs)
-      .set({ isEnabled: !config[0].isEnabled, updatedAt: now })
-      .where(eq(rssAnimeConfigs.id, req.params.id));
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error toggling RSS anime config:', error);
-    res.status(500).json({ error: 'Failed to toggle RSS anime config' });
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
   }
 };
 
 module.exports = {
-  getSources,
-  getSourceById,
-  createSource,
-  updateSource,
-  deleteSource,
-  toggleSource,
-  fetchSource,
-  fetchAllSources,
-  getAnimeConfigs,
-  getAnimeConfigById,
-  createAnimeConfig,
-  updateAnimeConfig,
-  deleteAnimeConfig,
-  toggleAnimeConfig
+  getRss,
+  getRssById,
+  createRss,
+  updateRss,
+  deleteRss,
+  toggleRss,
+  fetchRss,
+  fetchAllRss,
+  getRssItems,
+  getTemplates
 };

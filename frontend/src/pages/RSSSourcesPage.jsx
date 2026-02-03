@@ -11,26 +11,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "../lib/utils"
 
 export function RSSSourcesPage() {
-  const [sources, setSources] = useState([])
+  const [feeds, setFeeds] = useState([])
+  const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
   const [showModal, setShowModal] = useState(false)
-  const [editingSource, setEditingSource] = useState(null)
-  const [formData, setFormData] = useState({ name: "", url: "", isEnabled: true })
+  const [editingFeed, setEditingFeed] = useState(null)
+  const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
   const [searchTerm, setSearchTerm] = useState("")
   const navigate = useNavigate()
 
-  const fetchSources = async () => {
+  const fetchFeeds = async () => {
     try {
       setLoading(true)
-      const response = await fetch("/api/rss/sources")
-      if (!response.ok) throw new Error("Failed to fetch sources")
+      const response = await fetch("/api/rss")
+      if (!response.ok) throw new Error("Failed to fetch feeds")
       const data = await response.json()
-      setSources(data)
+      setFeeds(data)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -39,9 +41,22 @@ export function RSSSourcesPage() {
     }
   }
 
+  const fetchTemplates = async () => {
+    try {
+      const response = await fetch("/api/rss/templates")
+      if (response.ok) {
+        const data = await response.json()
+        setTemplates(data)
+      }
+    } catch (err) {
+      console.error("Error fetching templates:", err)
+    }
+  }
+
   useEffect(() => {
     fetchHealth()
-    fetchSources()
+    fetchFeeds()
+    fetchTemplates()
   }, [])
 
   const fetchHealth = async () => {
@@ -61,7 +76,7 @@ export function RSSSourcesPage() {
     if (!health.sonarr?.connected) {
       return {
         title: "Sonarr Not Configured",
-        message: health.sonarr?.error || "Sonarr is not configured or unreachable. RSS sources management requires Sonarr to be properly configured.",
+        message: health.sonarr?.error || "Sonarr is not configured or unreachable. RSS feed management requires Sonarr to be properly configured.",
         service: "Sonarr"
       }
     }
@@ -75,12 +90,17 @@ export function RSSSourcesPage() {
     return null
   }
 
+  const getTemplateName = (templateId) => {
+    const template = templates.find(t => t.id === templateId)
+    return template ? template.name : "Unknown"
+  }
+
   const handleSave = async () => {
     try {
-      const url = editingSource
-        ? `/api/rss/sources/${editingSource.id}`
-        : "/api/rss/sources"
-      const method = editingSource ? "PUT" : "POST"
+      const url = editingFeed
+        ? `/api/rss/${editingFeed.id}`
+        : "/api/rss"
+      const method = editingFeed ? "PUT" : "POST"
 
       const response = await fetch(url, {
         method,
@@ -88,24 +108,24 @@ export function RSSSourcesPage() {
         body: JSON.stringify(formData)
       })
 
-      if (!response.ok) throw new Error("Failed to save source")
+      if (!response.ok) throw new Error("Failed to save feed")
 
       setShowModal(false)
-      setEditingSource(null)
-      setFormData({ name: "", url: "", isEnabled: true })
-      fetchSources()
+      setEditingFeed(null)
+      setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
+      fetchFeeds()
     } catch (err) {
       setError(err.message)
     }
   }
 
   const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this source?")) return
+    if (!confirm("Are you sure you want to delete this feed?")) return
 
     try {
-      const response = await fetch(`/api/rss/sources/${id}`, { method: "DELETE" })
-      if (!response.ok) throw new Error("Failed to delete source")
-      fetchSources()
+      const response = await fetch(`/api/rss/${id}`, { method: "DELETE" })
+      if (!response.ok) throw new Error("Failed to delete feed")
+      fetchFeeds()
     } catch (err) {
       setError(err.message)
     }
@@ -113,9 +133,9 @@ export function RSSSourcesPage() {
 
   const handleToggle = async (id) => {
     try {
-      const response = await fetch(`/api/rss/sources/${id}/toggle`, { method: "POST" })
-      if (!response.ok) throw new Error("Failed to toggle source")
-      fetchSources()
+      const response = await fetch(`/api/rss/${id}/toggle`, { method: "POST" })
+      if (!response.ok) throw new Error("Failed to toggle feed")
+      fetchFeeds()
     } catch (err) {
       setError(err.message)
     }
@@ -123,17 +143,17 @@ export function RSSSourcesPage() {
 
   const handleFetch = async (id) => {
     try {
-      const response = await fetch(`/api/rss/sources/${id}/fetch`, { method: "POST" })
-      if (!response.ok) throw new Error("Failed to fetch source")
-      fetchSources()
+      const response = await fetch(`/api/rss/${id}/fetch`, { method: "POST" })
+      if (!response.ok) throw new Error("Failed to fetch feed")
+      fetchFeeds()
     } catch (err) {
       setError(err.message)
     }
   }
 
-  const filteredSources = sources.filter(s =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.url.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredFeeds = feeds.filter(f =>
+    f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    f.url.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const serviceError = getServiceError()
@@ -141,7 +161,7 @@ export function RSSSourcesPage() {
   return (
     <Layout>
       <div className="p-6 space-y-6">
-        <h2 className="text-2xl font-bold">RSS Sources</h2>
+        <h2 className="text-2xl font-bold">RSS Feeds</h2>
 
         {serviceError && (
           <Alert variant="destructive">
@@ -172,19 +192,19 @@ export function RSSSourcesPage() {
               <div className="relative w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
                 <Input
-                  placeholder="Search sources..."
+                  placeholder="Search feeds..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
                 />
               </div>
               <Button onClick={() => {
-                setEditingSource(null)
-                setFormData({ name: "", url: "", isEnabled: true })
+                setEditingFeed(null)
+                setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
                 setShowModal(true)
               }}>
                 <Plus size={18} className="mr-2" />
-                Add Source
+                Add Feed
               </Button>
             </div>
           </CardContent>
@@ -195,9 +215,9 @@ export function RSSSourcesPage() {
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               Loading...
             </div>
-          ) : filteredSources.length === 0 ? (
+          ) : filteredFeeds.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
-              {searchTerm ? "No sources found" : "No RSS sources configured"}
+              {searchTerm ? "No feeds found" : "No RSS feeds configured"}
             </div>
           ) : (
             <Table>
@@ -206,43 +226,56 @@ export function RSSSourcesPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>URL</TableHead>
+                  <TableHead>Template</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Fetch</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredSources.map((source) => (
-                  <TableRow key={source.id}>
-                    <TableCell className="text-muted-foreground">#{source.id}</TableCell>
-                    <TableCell>{source.name}</TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">{source.url}</TableCell>
+                {filteredFeeds.map((feed) => (
+                  <TableRow key={feed.id}>
+                    <TableCell className="text-muted-foreground">#{feed.id}</TableCell>
                     <TableCell>
-                      <Badge variant={source.isEnabled ? "default" : "secondary"}>
-                        {source.isEnabled ? "Enabled" : "Disabled"}
+                      <div className="font-medium">{feed.name}</div>
+                      {feed.description && <div className="text-xs text-muted-foreground">{feed.description}</div>}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground">{feed.url}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{getTemplateName(feed.templateId)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={feed.isEnabled ? "default" : "secondary"}>
+                        {feed.isEnabled ? "Enabled" : "Disabled"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {source.lastFetchedAt
-                        ? new Date(source.lastFetchedAt).toLocaleString()
+                      {feed.lastFetchedAt
+                        ? new Date(feed.lastFetchedAt).toLocaleString()
                         : "-"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleFetch(source.id)} title="Fetch">
+                        <Button variant="ghost" size="icon" onClick={() => handleFetch(feed.id)} title="Fetch">
                           <RefreshCw size={16} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleToggle(source.id)} title={source.isEnabled ? "Disable" : "Enable"}>
-                          {source.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
+                        <Button variant="ghost" size="icon" onClick={() => handleToggle(feed.id)} title={feed.isEnabled ? "Disable" : "Enable"}>
+                          {feed.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => {
-                          setEditingSource(source)
-                          setFormData({ name: source.name, url: source.url, isEnabled: source.isEnabled })
+                          setEditingFeed(feed)
+                          setFormData({
+                            name: feed.name,
+                            url: feed.url,
+                            description: feed.description || "",
+                            templateId: String(feed.templateId),
+                            isEnabled: feed.isEnabled
+                          })
                           setShowModal(true)
                         }} title="Edit">
                           <Edit2 size={16} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(source.id)} title="Delete" className="hover:text-destructive">
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(feed.id)} title="Delete" className="hover:text-destructive">
                           <Trash2 size={16} />
                         </Button>
                       </div>
@@ -258,7 +291,7 @@ export function RSSSourcesPage() {
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingSource ? "Edit RSS Source" : "Add RSS Source"}</DialogTitle>
+            <DialogTitle>{editingFeed ? "Edit RSS Feed" : "Add RSS Feed"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -267,7 +300,7 @@ export function RSSSourcesPage() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Source name"
+                placeholder="Feed name"
               />
             </div>
             <div className="space-y-2">
@@ -279,6 +312,33 @@ export function RSSSourcesPage() {
                 onChange={(e) => setFormData({ ...formData, url: e.target.value })}
                 placeholder="https://example.com/rss"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description (optional)</Label>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Feed description"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="template">Template</Label>
+              <Select
+                value={formData.templateId}
+                onValueChange={(value) => setFormData({ ...formData, templateId: value })}
+              >
+                <SelectTrigger id="template">
+                  <SelectValue placeholder="Select template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((template) => (
+                    <SelectItem key={template.id} value={String(template.id)}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
@@ -292,8 +352,8 @@ export function RSSSourcesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowModal(false)
-              setEditingSource(null)
-              setFormData({ name: "", url: "", isEnabled: true })
+              setEditingFeed(null)
+              setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
             }}>
               Cancel
             </Button>

@@ -1,31 +1,7 @@
 const { db } = require('../db/db');
-const { rssSources, rssFeedItems } = require('../db/schema');
+const { rss, rssItem } = require('../db/schema');
 const { eq, sql } = require('drizzle-orm');
-
-const parseRSS = (xml) => {
-  const items = [];
-  const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
-  let match;
-
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const itemXml = match[1];
-    const titleMatch = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/i);
-    const linkMatch = itemXml.match(/<link>(.*?)<\/link>/i);
-    const guidMatch = itemXml.match(/<guid[^>]*>(.*?)<\/guid>|<guid[^>]*>(.*?)<\/guid>/i);
-    const pubDateMatch = itemXml.match(/<pubDate>(.*?)<\/pubDate>/i);
-
-    const title = titleMatch ? (titleMatch[1] || titleMatch[2] || 'Untitled') : 'Untitled';
-    const link = linkMatch ? linkMatch[1] : '';
-    const guid = guidMatch ? (guidMatch[1] || guidMatch[2] || link) : link;
-    const pubDate = pubDateMatch ? new Date(pubDateMatch[1]) : new Date();
-
-    if (link) {
-      items.push({ title, link, guid, pubDate });
-    }
-  }
-
-  return items;
-};
+const { getParser } = require('../rss_parsers');
 
 const fetchFeed = async (url) => {
   try {
@@ -38,30 +14,33 @@ const fetchFeed = async (url) => {
     }
 
     const xml = await response.text();
-    return { success: true, items: parseRSS(xml) };
+    return { success: true, xml };
   } catch (error) {
-    return { success: false, error: error.message, items: [] };
+    return { success: false, error: error.message };
   }
 };
 
-const saveFeedItems = async (sourceId, items) => {
+const saveRssItems = async (rssId, items) => {
   const newItems = [];
   const now = new Date();
 
   for (const item of items) {
     const existing = await db.select()
-      .from(rssFeedItems)
-      .where(eq(rssFeedItems.link, item.link))
+      .from(rssItem)
+      .where(eq(rssItem.guid, item.guid))
       .limit(1);
 
     if (existing.length === 0) {
-      await db.insert(rssFeedItems).values({
-        rssSourceId: sourceId,
-        title: item.title,
-        link: item.link,
+      await db.insert(rssItem).values({
+        rssId,
         guid: item.guid,
-        pubDate: item.pubDate,
-        isProcessed: false,
+        title: item.title,
+        description: item.description,
+        link: item.link,
+        publishedDate: item.publishedDate,
+        magnetLink: item.magnetLink,
+        author: item.author,
+        category: item.category,
         createdAt: now
       });
       newItems.push(item);
@@ -71,78 +50,89 @@ const saveFeedItems = async (sourceId, items) => {
   return newItems;
 };
 
-const fetchAndProcessSource = async (sourceId) => {
-  const source = await db.select().from(rssSources).where(eq(rssSources.id, sourceId)).limit(1);
+const fetchAndParseRss = async (rssId) => {
+  const feed = await db.select().from(rss).where(eq(rss.id, rssId)).limit(1);
 
-  if (source.length === 0) {
-    return { success: false, message: 'Source not found' };
+  if (feed.length === 0) {
+    return { success: false, message: 'RSS feed not found' };
   }
 
-  if (!source[0].isEnabled) {
-    return { success: false, message: 'Source is disabled' };
+  if (!feed[0].isEnabled) {
+    return { success: false, message: 'RSS feed is disabled' };
   }
 
-  const result = await fetchFeed(source[0].url);
+  const fetchResult = await fetchFeed(feed[0].url);
 
-  if (!result.success) {
-    return { success: false, message: result.error };
+  if (!fetchResult.success) {
+    return { success: false, message: fetchResult.error };
   }
 
-  const newItems = await saveFeedItems(sourceId, result.items);
+  const parser = getParser(feed[0].templateId);
+  const items = parser.parse(fetchResult.xml);
 
-  await db.update(rssSources)
+  const newItems = await saveRssItems(rssId, items);
+
+  await db.update(rss)
     .set({ lastFetchedAt: new Date(), updatedAt: new Date() })
-    .where(eq(rssSources.id, sourceId));
+    .where(eq(rss.id, rssId));
 
   return {
     success: true,
-    message: `Found ${result.items.length} items, ${newItems.length} new`,
+    message: `Found ${items.length} items, ${newItems.length} new`,
     newItems: newItems.length
   };
 };
 
-const fetchAllSources = async () => {
-  const sources = await db.select().from(rssSources).where(eq(rssSources.isEnabled, true));
+const fetchAllRss = async () => {
+  const feeds = await db.select().from(rss).where(eq(rss.isEnabled, true));
   const results = [];
 
-  for (const source of sources) {
-    const result = await fetchAndProcessSource(source.id);
-    results.push({ sourceId: source.id, sourceName: source.name, ...result });
+  for (const feed of feeds) {
+    const result = await fetchAndParseRss(feed.id);
+    results.push({ rssId: feed.id, name: feed.name, ...result });
   }
 
   return results;
 };
 
+const getRssItems = async (rssId, limit = 100) => {
+  return await db.select()
+    .from(rssItem)
+    .where(eq(rssItem.rssId, rssId))
+    .orderBy(rssItem.publishedDate)
+    .limit(limit);
+};
+
 const getUnprocessedItems = async (limit = 50) => {
   return await db.select()
-    .from(rssFeedItems)
-    .where(eq(rssFeedItems.isProcessed, false))
-    .orderBy(rssFeedItems.pubDate)
+    .from(rssItem)
+    .orderBy(rssItem.publishedDate)
     .limit(limit);
 };
 
 const markAsProcessed = async (ids) => {
   if (!ids || ids.length === 0) return;
-
-  await db.update(rssFeedItems)
-    .set({ isProcessed: true, downloadedAt: new Date() })
-    .where(sql`${rssFeedItems.id} IN (${ids.join(',')})`);
+  await db.update(rssItem)
+    .set({ downloadedAt: new Date() })
+    .where(sql`${rssItem.id} IN (${ids.join(',')})`);
 };
 
-const getSources = async () => {
-  return await db.select().from(rssSources).orderBy(rssSources.name);
+const getAllRss = async () => {
+  return await db.select().from(rss).orderBy(rss.name);
 };
 
-const getSourceById = async (id) => {
-  const result = await db.select().from(rssSources).where(eq(rssSources.id, id)).limit(1);
+const getRssById = async (id) => {
+  const result = await db.select().from(rss).where(eq(rss.id, id)).limit(1);
   return result[0] || null;
 };
 
-const createSource = async (data) => {
+const createRss = async (data) => {
   const now = new Date();
-  const result = await db.insert(rssSources).values({
+  const result = await db.insert(rss).values({
     name: data.name,
+    description: data.description || null,
     url: data.url,
+    templateId: data.templateId || 0,
     isEnabled: data.isEnabled !== false,
     createdAt: now,
     updatedAt: now
@@ -150,45 +140,47 @@ const createSource = async (data) => {
   return result[0];
 };
 
-const updateSource = async (id, data) => {
+const updateRss = async (id, data) => {
   const now = new Date();
   const updateData = { updatedAt: now };
   if (data.name !== undefined) updateData.name = data.name;
+  if (data.description !== undefined) updateData.description = data.description;
   if (data.url !== undefined) updateData.url = data.url;
+  if (data.templateId !== undefined) updateData.templateId = data.templateId;
   if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
 
-  const result = await db.update(rssSources)
+  const result = await db.update(rss)
     .set(updateData)
-    .where(eq(rssSources.id, id))
+    .where(eq(rss.id, id))
     .returning();
   return result[0];
 };
 
-const deleteSource = async (id) => {
-  await db.delete(rssFeedItems).where(eq(rssFeedItems.rssSourceId, id));
-  await db.delete(rssSources).where(eq(rssSources.id, id));
+const deleteRss = async (id) => {
+  await db.delete(rssItem).where(eq(rssItem.rssId, id));
+  await db.delete(rss).where(eq(rss.id, id));
   return { success: true };
 };
 
-const toggleSource = async (id) => {
-  const source = await getSourceById(id);
-  if (!source) return null;
+const toggleRss = async (id) => {
+  const feed = await getRssById(id);
+  if (!feed) return null;
 
-  return await updateSource(id, { isEnabled: !source.isEnabled });
+  return await updateRss(id, { isEnabled: !feed.isEnabled });
 };
 
 module.exports = {
   fetchFeed,
-  parseRSS,
-  saveFeedItems,
-  fetchAndProcessSource,
-  fetchAllSources,
+  saveRssItems,
+  fetchAndParseRss,
+  fetchAllRss,
+  getRssItems,
   getUnprocessedItems,
   markAsProcessed,
-  getSources,
-  getSourceById,
-  createSource,
-  updateSource,
-  deleteSource,
-  toggleSource
+  getAllRss,
+  getRssById,
+  createRss,
+  updateRss,
+  deleteRss,
+  toggleRss
 };

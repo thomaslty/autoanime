@@ -67,47 +67,38 @@ const series = pgTable('series', {
   index('idx_series_tvdb').on(table.tvdbId),
 ]);
 
-const rssSources = pgTable('rss_sources', {
+const rss = pgTable('rss', {
   id: serial('id').primaryKey(),
   name: varchar('name').notNull(),
+  description: text('description'),
   url: varchar('url').notNull(),
+  templateId: integer('template_id').default(0),
   isEnabled: boolean('is_enabled').default(true),
   lastFetchedAt: timestamp('last_fetched_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_rss_sources_name').on(table.name),
-  index('idx_rss_sources_is_enabled').on(table.isEnabled),
+  index('idx_rss_name').on(table.name),
+  index('idx_rss_is_enabled').on(table.isEnabled),
+  index('idx_rss_template_id').on(table.templateId),
 ]);
 
-const rssAnimeConfigs = pgTable('rss_anime_configs', {
+const rssItem = pgTable('rss_item', {
   id: serial('id').primaryKey(),
-  rssSourceId: integer('rss_source_id').references(() => rssSources.id),
-  seriesId: integer('series_id').references(() => series.id),
-  name: varchar('name').notNull(),
-  url: varchar('url').notNull(),
-  isEnabled: boolean('is_enabled').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_rss_anime_configs_name').on(table.name),
-  index('idx_rss_anime_configs_is_enabled').on(table.isEnabled),
-]);
-
-const rssFeedItems = pgTable('rss_feed_items', {
-  id: serial('id').primaryKey(),
-  rssSourceId: integer('rss_source_id').references(() => rssSources.id),
-  title: text('title').notNull(),
-  link: varchar('link').notNull(),
-  guid: varchar('guid'),
-  pubDate: timestamp('pub_date'),
-  isProcessed: boolean('is_processed').default(false),
-  downloadedAt: timestamp('downloaded_at'),
+  rssId: integer('rss_id').references(() => rss.id, { onDelete: 'cascade' }),
+  guid: varchar('guid').notNull(),
+  title: text('title'),
+  description: text('description'),
+  link: varchar('link'),
+  publishedDate: timestamp('published_date'),
+  magnetLink: text('magnet_link'),
+  author: varchar('author'),
+  category: varchar('category'),
   createdAt: timestamp('created_at').defaultNow(),
 }, (table) => [
-  index('idx_rss_feed_items_link').on(table.link),
-  index('idx_rss_feed_items_is_processed').on(table.isProcessed),
-  index('idx_rss_feed_items_rss_source').on(table.rssSourceId),
+  index('idx_rss_item_rss_id').on(table.rssId),
+  index('idx_rss_item_guid').on(table.guid),
+  index('idx_rss_item_published').on(table.publishedDate),
 ]);
 
 const qbittorrentDownloads = pgTable('qbittorrent_downloads', {
@@ -208,9 +199,8 @@ const seriesEpisodes = pgTable('series_episodes', {
 
 module.exports = {
   series,
-  rssSources,
-  rssAnimeConfigs,
-  rssFeedItems,
+  rss,
+  rssItem,
   qbittorrentDownloads,
   settings,
   seriesImages,

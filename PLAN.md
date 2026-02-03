@@ -1,149 +1,212 @@
-# Fix: Series Episodes Data Loss on Server Restart
+# RSS System Redesign Plan
 
-## Problem Description
+> **Last Updated:** 2026-02-03
 
-When the backend server restarts, all records in the `series_episodes` table are cleared due to cascade deletes triggered by season deletion.
+## Overview
 
-## Root Cause
-
-`syncSeasons()` uses destructive delete-then-insert, which triggers cascade deletion on `series_episodes` via the `seasonId` foreign key.
+Redesign the RSS database schema to support template-based parsing for different RSS sources (e.g., dmhy, nyaa). The new design separates RSS feed configuration from parsed items and uses a template system for site-specific XML parsing.
 
 ---
 
-## Proposed Changes
+## Phase 1: Database Schema Changes
 
-### Strategy: Progressive Upsert (Non-Destructive)
+### 1.1 Remove Old Tables
+Remove the following deprecated tables from `backend/src/db/schema.js`:
+- [ ] `rss_sources` 
+- [ ] `rss_feed_items`
+- [ ] `rss_anime_configs`
 
-Use **insert-if-missing, update-metadata-only** logic across ALL sync operations (startup and explicit `/api/sonarr/sync`):
+### 1.2 Create RSS Template Enum
+Create `backend/src/enums/rssTemplate.js`:
 
-- **Insert** new records if they don't exist
-- **Update** only metadata fields (title, overview, stats, etc.)
-- **Preserve** user-controlled fields (`isAutoDownloadEnabled`, `autoDownloadStatus`, `downloadedAt`)
-- **Never delete** existing records
+```javascript
+const RssTemplate = {
+  CUSTOM: 0,  // User-defined parsing rules
+  DMHY: 1,    // 動漫花園 (share.dmhy.org)
+};
+```
+
+### 1.3 Create New `rss` Table
+Parent table for RSS feed configurations.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial | Primary key |
+| name | varchar | Feed display name |
+| description | text | Optional description |
+| url | varchar | RSS feed URL |
+| template_id | integer | References `RssTemplate` enum |
+| is_enabled | boolean | Default true |
+| last_fetched_at | timestamp | Last successful fetch |
+| created_at | timestamp | |
+| updated_at | timestamp | |
+
+### 1.4 Create New `rss_item` Table  
+Stores parsed RSS entries with normalized fields.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial | Primary key |
+| rss_id | integer | FK to `rss.id` |
+| guid | varchar | Hashed unique identifier |
+| title | text | Item title |
+| description | text | Item description/summary |
+| link | varchar | Original item URL |
+| published_date | timestamp | Publication date |
+| magnet_link | text | Extracted magnet URI |
+| author | varchar | Uploader/author |
+| category | varchar | Category tag |
+| created_at | timestamp | |
+
+**Indexes:**
+- `idx_rss_item_rss_id` on `rss_id`
+- `idx_rss_item_guid` on `guid` (unique constraint)
+- `idx_rss_item_published` on `published_date`
 
 ---
+
+## Phase 2: Backend Implementation
+
+### 2.1 Create RSS Parser Module
+Create `backend/src/rss_parsers/` folder structure:
+
+```
+backend/src/rss_parsers/
+├── index.js          # Parser registry/factory
+├── baseParser.js     # Base parser class
+└── dmhyParser.js     # DMHY-specific parser
+```
+
+### 2.2 DMHY Parser Specification
+
+**XML Item to Database Mapping:**
+
+| XML Element | DB Column | Transform |
+|-------------|-----------|-----------|
+| `<title>` | title | Extract from CDATA |
+| `<link>` | link | Direct |
+| `<pubDate>` | published_date | Parse date |
+| `<description>` | description | Extract from CDATA |
+| `<enclosure url="...">` | magnet_link | Extract `url` attribute |
+| `<author>` | author | Extract from CDATA |
+| `<category>` | category | Extract from CDATA |
+| `<guid>` | guid | Hash the value for uniqueness |
+
+**Parser Requirements:**
+- Handle CDATA sections properly
+- Deduplicate based on hashed `guid`
+- Extract magnet link from `<enclosure>` element's `url` attribute
+- Parse dates with timezone support (+0800 for dmhy)
+
+### 2.3 Update RSS Service
+Refactor `backend/src/services/rssService.js`:
+- [ ] Import new schema tables (`rss`, `rssItem`)
+- [ ] Use parser factory to select parser by `template_id`
+- [ ] Update CRUD operations for new table structure
+- [ ] Implement `fetchAndParseRss(rssId)` with template-based parsing
+
+### 2.4 Update RSS Controller & Routes
+Update `backend/src/controllers/rssController.js` and `backend/src/routes/rss.js`:
+- [ ] Add `template_id` to create/update endpoints
+- [ ] Add endpoint to list available templates
+
+---
+
+## Phase 3: Migration
+
+### 3.1 Generate Migration
+```bash
+cd backend && npx drizzle-kit generate
+```
+
+### 3.2 Apply Migration
+```bash
+npm run db:migrate
+```
+
+> **Note:** This is a breaking change. Old RSS data will be lost. Consider data export if needed.
+
+---
+
+## Phase 4: Frontend Updates
+
+### 4.1 Update RSSSourcesPage
+Update `frontend/src/pages/RSSSourcesPage.jsx`:
+- [ ] Add template selector dropdown in add/edit modal
+- [ ] Display template name in sources table
+- [ ] Update API calls to match new endpoints
+
+### 4.2 API Endpoint Changes
+
+| Old Endpoint | New Endpoint |
+|--------------|--------------|
+| `GET /api/rss/sources` | `GET /api/rss` |
+| `POST /api/rss/sources` | `POST /api/rss` |
+| `PUT /api/rss/sources/:id` | `PUT /api/rss/:id` |
+| `DELETE /api/rss/sources/:id` | `DELETE /api/rss/:id` |
+| `POST /api/rss/sources/:id/fetch` | `POST /api/rss/:id/fetch` |
+| `POST /api/rss/sources/:id/toggle` | `POST /api/rss/:id/toggle` |
+| - | `GET /api/rss/templates` (new) |
+| - | `GET /api/rss/:id/items` (new) |
+
+---
+
+## Reference: DMHY XML Structure
+
+### RSS Channel Header
+```xml
+<rss xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0">
+<channel>
+  <title><![CDATA[ 動漫花園資源網 ]]></title>
+  <link>http://share.dmhy.org</link>
+  <description><![CDATA[ 動漫花園資訊網... ]]></description>
+  <language>zh-cn</language>
+  <pubDate>Tue, 03 Feb 2026 10:49:07 +0800</pubDate>
+```
+
+### RSS Item Example
+```xml
+<item>
+  <title><![CDATA[ 【幻櫻字幕組】【1月新番】【黃金神威 Golden Kamuy】【54】【BIG5_MP4】【1280X720】 ]]></title>
+  <link>http://share.dmhy.org/topics/view/712530_1_Golden_Kamuy_54_BIG5_MP4_1280X720.html</link>
+  <pubDate>Tue, 03 Feb 2026 02:53:40 +0800</pubDate>
+  <description><![CDATA[ <p>...</p> ]]></description>
+  <enclosure url="magnet:?xt=urn:btih:GEFRQFDYBFEEPFJ7ZC5MYDXGIAJKGFGO&..." length="1" type="application/x-bittorrent"/>
+  <author><![CDATA[ summer1278 ]]></author>
+  <guid isPermaLink="true">http://share.dmhy.org/topics/view/712530_...</guid>
+  <category domain="http://share.dmhy.org/topics/list/sort_id/2"><![CDATA[ 動畫 ]]></category>
+</item>
+```
+
+---
+
+## Implementation Checklist
+
+### Database
+- [ ] Create `rssTemplate.js` enum file
+- [ ] Update `schema.js` - remove old tables
+- [ ] Update `schema.js` - add new `rss` table
+- [ ] Update `schema.js` - add new `rss_item` table
+- [ ] Generate and apply migration
 
 ### Backend
+- [ ] Create `rss_parsers/` directory
+- [ ] Implement `baseParser.js`
+- [ ] Implement `dmhyParser.js`
+- [ ] Implement parser factory in `index.js`
+- [ ] Update `rssService.js` for new schema
+- [ ] Update `rssController.js` for new endpoints
+- [ ] Update `rss.js` routes
 
-#### [MODIFY] [app.js](file:///home/coder/project/autoanime/backend/src/app.js)
-
-Replace destructive sync functions with progressive upsert:
-
-**`upsertSeasons()` - Progressive update:**
-```javascript
-const upsertSeasons = async (seriesId, seasons, now) => {
-  if (!seasons || seasons.length === 0) return;
-
-  for (const season of seasons) {
-    const existing = await db.select().from(seriesSeasons).where(
-      and(
-        eq(seriesSeasons.seriesId, seriesId),
-        eq(seriesSeasons.seasonNumber, season.seasonNumber)
-      )
-    );
-
-    // Metadata fields only (preserve auto-download fields)
-    const metadataUpdate = {
-      monitored: season.monitored,
-      episodeCount: season.statistics?.episodeCount,
-      episodeFileCount: season.statistics?.episodeFileCount,
-      totalEpisodeCount: season.statistics?.totalEpisodeCount,
-      sizeOnDisk: season.statistics?.sizeOnDisk,
-      percentOfEpisodes: season.statistics?.percentOfEpisodes,
-      nextAiring: parseTimestamp(season.statistics?.nextAiring),
-      previousAiring: parseTimestamp(season.statistics?.previousAiring),
-      updatedAt: now
-    };
-
-    if (existing.length > 0) {
-      await db.update(seriesSeasons).set(metadataUpdate).where(eq(seriesSeasons.id, existing[0].id));
-    } else {
-      await db.insert(seriesSeasons).values({
-        seriesId,
-        seasonNumber: season.seasonNumber,
-        ...metadataUpdate,
-        createdAt: now
-      });
-    }
-  }
-};
-```
-
-**`upsertSeriesImages()` and `upsertAlternateTitles()`** - Same pattern (check exists, update or insert).
+### Frontend  
+- [ ] Update `RSSSourcesPage.jsx` with template selector
+- [ ] Update API endpoint paths
+- [ ] Add RSS items view page (optional)
 
 ---
 
-#### [MODIFY] [sonarrController.js](file:///home/coder/project/autoanime/backend/src/controllers/sonarrController.js)
-
-Update `syncSeasons()` and `syncEpisodes()` to use progressive upsert:
-
-**`syncEpisodes()` - Progressive update (preserve auto-download fields):**
-```javascript
-const syncEpisodes = async (seriesId, sonarrSeriesId, now) => {
-  const episodes = await sonarrService.getEpisodesBySeries(sonarrSeriesId);
-  if (!episodes || episodes.length === 0) return 0;
-
-  const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
-  const seasonIdMap = Object.fromEntries(seasons.map(s => [s.seasonNumber, s.id]));
-
-  for (const episode of episodes) {
-    const existing = await db.select().from(seriesEpisodes).where(
-      eq(seriesEpisodes.sonarrEpisodeId, episode.id)
-    );
-
-    // Metadata only - preserve isAutoDownloadEnabled, autoDownloadStatus, downloadedAt
-    const metadataUpdate = {
-      title: episode.title,
-      overview: episode.overview,
-      airDate: parseTimestamp(episode.airDateUtc),
-      hasFile: episode.hasFile || false,
-      monitored: episode.monitored,
-      updatedAt: now
-    };
-
-    if (existing.length > 0) {
-      await db.update(seriesEpisodes).set(metadataUpdate).where(eq(seriesEpisodes.id, existing[0].id));
-    } else {
-      await db.insert(seriesEpisodes).values({
-        seriesId,
-        seasonId: seasonIdMap[episode.seasonNumber] || null,
-        sonarrEpisodeId: episode.id,
-        episodeNumber: episode.episodeNumber,
-        seasonNumber: episode.seasonNumber,
-        ...metadataUpdate,
-        createdAt: now
-      });
-    }
-  }
-
-  return episodes.length;
-};
-```
-
-> [!IMPORTANT]
-> **Fields to preserve (never overwrite):**
-> - `isAutoDownloadEnabled`
-> - `autoDownloadStatus`
-> - `downloadedAt`
-
----
-
-## Summary of Changes
-
-| Function | Location | Change |
-|----------|----------|--------|
-| `syncSeriesImages` | app.js | → `upsertSeriesImages` (no delete) |
-| `syncAlternateTitles` | app.js | → `upsertAlternateTitles` (no delete) |
-| `syncSeasons` | app.js, controller | → `upsertSeasons` (no delete) |
-| `syncEpisodes` | controller | → Progressive upsert (preserve auto-download fields) |
-
----
-
-## Verification Plan
-
-1. Start servers, trigger initial sync, verify episodes exist with default auto-download status
-2. Toggle auto-download on some episodes
-3. Trigger `/api/sonarr/sync` again
-4. Verify: episodes still exist, auto-download settings preserved
-5. Restart servers
-6. Verify: all data intact
+## Future Enhancements
+- [ ] Add more RSS templates (nyaa, acg.rip, etc.)
+- [ ] Custom parsing rules UI for `CUSTOM` template
+- [ ] RSS item search/filter functionality
+- [ ] Auto-match RSS items to Sonarr series
