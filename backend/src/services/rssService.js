@@ -1,7 +1,33 @@
 const { db } = require('../db/db');
 const { rss, rssItem } = require('../db/schema');
-const { eq, sql } = require('drizzle-orm');
+const { eq, sql, lte } = require('drizzle-orm');
 const { getParser } = require('../rss_parsers');
+const { CronExpressionParser } = require('cron-parser');
+
+const ALLOWED_HUMAN_INTERVALS = ['15m', '30m', '1h', '2h', '4h', '8h', '12h', '24h'];
+
+const parseHumanInterval = (interval) => {
+  const match = interval.match(/^(\d+)(m|h)$/);
+  if (!match) return null;
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  return unit === 'm' ? value * 60 * 1000 : value * 60 * 60 * 1000;
+};
+
+const calculateNextFetchAt = (intervalType, interval) => {
+  const now = new Date();
+  if (intervalType === 'cron') {
+    try {
+      const parsed = CronExpressionParser.parseExpression(interval);
+      return parsed.next().toDate();
+    } catch {
+      return null;
+    }
+  }
+  const ms = parseHumanInterval(interval);
+  if (!ms) return null;
+  return new Date(now.getTime() + ms);
+};
 
 const fetchFeed = async (url) => {
   try {
@@ -72,8 +98,9 @@ const fetchAndParseRss = async (rssId) => {
 
   const newItems = await saveRssItems(rssId, items);
 
+  const nextFetchAt = calculateNextFetchAt(feed[0].refreshIntervalType, feed[0].refreshInterval);
   await db.update(rss)
-    .set({ lastFetchedAt: new Date(), updatedAt: new Date() })
+    .set({ lastFetchedAt: new Date(), updatedAt: new Date(), nextFetchAt })
     .where(eq(rss.id, rssId));
 
   return {
@@ -128,12 +155,17 @@ const getRssById = async (id) => {
 
 const createRss = async (data) => {
   const now = new Date();
+  const intervalType = data.refreshIntervalType || 'human';
+  const interval = data.refreshInterval || '1h';
   const result = await db.insert(rss).values({
     name: data.name,
     description: data.description || null,
     url: data.url,
     templateId: data.templateId || 0,
     isEnabled: data.isEnabled !== false,
+    refreshInterval: interval,
+    refreshIntervalType: intervalType,
+    nextFetchAt: calculateNextFetchAt(intervalType, interval),
     createdAt: now,
     updatedAt: now
   }).returning();
@@ -148,6 +180,15 @@ const updateRss = async (id, data) => {
   if (data.url !== undefined) updateData.url = data.url;
   if (data.templateId !== undefined) updateData.templateId = data.templateId;
   if (data.isEnabled !== undefined) updateData.isEnabled = data.isEnabled;
+  if (data.refreshInterval !== undefined) updateData.refreshInterval = data.refreshInterval;
+  if (data.refreshIntervalType !== undefined) updateData.refreshIntervalType = data.refreshIntervalType;
+
+  if (data.refreshInterval !== undefined || data.refreshIntervalType !== undefined) {
+    const feed = await getRssById(id);
+    const intervalType = data.refreshIntervalType ?? feed.refreshIntervalType;
+    const interval = data.refreshInterval ?? feed.refreshInterval;
+    updateData.nextFetchAt = calculateNextFetchAt(intervalType, interval);
+  }
 
   const result = await db.update(rss)
     .set(updateData)
@@ -204,6 +245,13 @@ const downloadRssItem = async (feedId, itemId) => {
   return await qbittorrentService.addMagnet(item.magnetLink);
 };
 
+const getOverdueFeeds = async () => {
+  const { and } = require('drizzle-orm');
+  return await db.select()
+    .from(rss)
+    .where(and(eq(rss.isEnabled, true), lte(rss.nextFetchAt, new Date())));
+};
+
 module.exports = {
   fetchFeed,
   saveRssItems,
@@ -220,5 +268,8 @@ module.exports = {
   toggleRss,
   clearRssItems,
   updateRssItem,
-  downloadRssItem
+  downloadRssItem,
+  getOverdueFeeds,
+  calculateNextFetchAt,
+  ALLOWED_HUMAN_INTERVALS
 };

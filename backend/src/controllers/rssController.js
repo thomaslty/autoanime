@@ -1,5 +1,27 @@
 const rssService = require('../services/rssService');
 const { getAvailableTemplates, getTemplateName } = require('../rss_parsers');
+const { CronExpressionParser } = require('cron-parser');
+
+const validateInterval = (type, interval) => {
+  if (type === 'cron') {
+    try {
+      const parsed = CronExpressionParser.parseExpression(interval);
+      // Enforce minimum 15-minute interval
+      const next1 = parsed.next().toDate().getTime();
+      const next2 = CronExpressionParser.parseExpression(interval).next().next().toDate().getTime();
+      if (next2 - next1 < 15 * 60 * 1000) {
+        return 'Cron interval must be at least 15 minutes';
+      }
+      return null;
+    } catch {
+      return 'Invalid cron expression';
+    }
+  }
+  if (!rssService.ALLOWED_HUMAN_INTERVALS.includes(interval)) {
+    return `Invalid interval. Allowed: ${rssService.ALLOWED_HUMAN_INTERVALS.join(', ')}`;
+  }
+  return null;
+};
 
 const getRss = async (req, res) => {
   try {
@@ -13,7 +35,11 @@ const getRss = async (req, res) => {
 
 const getRssById = async (req, res) => {
   try {
-    const feed = await rssService.getRssById(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      return res.status(404).json({ error: 'RSS feed not found' });
+    }
+    const feed = await rssService.getRssById(id);
     if (!feed) {
       return res.status(404).json({ error: 'RSS feed not found' });
     }
@@ -26,11 +52,16 @@ const getRssById = async (req, res) => {
 
 const createRss = async (req, res) => {
   try {
-    const { name, description, url, templateId, isEnabled } = req.body;
+    const { name, description, url, templateId, isEnabled, refreshInterval, refreshIntervalType } = req.body;
     if (!name || !url) {
       return res.status(400).json({ error: 'Name and URL are required' });
     }
-    const feed = await rssService.createRss({ name, description, url, templateId, isEnabled });
+    const intervalType = refreshIntervalType || 'human';
+    const interval = refreshInterval || '1h';
+    const intervalError = validateInterval(intervalType, interval);
+    if (intervalError) return res.status(400).json({ error: intervalError });
+
+    const feed = await rssService.createRss({ name, description, url, templateId, isEnabled, refreshInterval: interval, refreshIntervalType: intervalType });
     res.status(201).json(feed);
   } catch (error) {
     console.error('Error creating RSS feed:', error);
@@ -40,8 +71,19 @@ const createRss = async (req, res) => {
 
 const updateRss = async (req, res) => {
   try {
-    const { name, description, url, templateId, isEnabled } = req.body;
-    const feed = await rssService.updateRss(req.params.id, { name, description, url, templateId, isEnabled });
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
+    const { name, description, url, templateId, isEnabled, refreshInterval, refreshIntervalType } = req.body;
+
+    if (refreshInterval !== undefined || refreshIntervalType !== undefined) {
+      const existing = await rssService.getRssById(id);
+      const intervalType = refreshIntervalType ?? existing?.refreshIntervalType ?? 'human';
+      const interval = refreshInterval ?? existing?.refreshInterval ?? '1h';
+      const intervalError = validateInterval(intervalType, interval);
+      if (intervalError) return res.status(400).json({ error: intervalError });
+    }
+
+    const feed = await rssService.updateRss(id, { name, description, url, templateId, isEnabled, refreshInterval, refreshIntervalType });
     if (!feed) {
       return res.status(404).json({ error: 'RSS feed not found' });
     }
@@ -54,7 +96,9 @@ const updateRss = async (req, res) => {
 
 const deleteRss = async (req, res) => {
   try {
-    await rssService.deleteRss(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
+    await rssService.deleteRss(id);
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting RSS feed:', error);
@@ -64,7 +108,9 @@ const deleteRss = async (req, res) => {
 
 const toggleRss = async (req, res) => {
   try {
-    const feed = await rssService.toggleRss(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
+    const feed = await rssService.toggleRss(id);
     if (!feed) {
       return res.status(404).json({ error: 'RSS feed not found' });
     }
@@ -77,7 +123,9 @@ const toggleRss = async (req, res) => {
 
 const fetchRss = async (req, res) => {
   try {
-    const result = await rssService.fetchAndParseRss(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
+    const result = await rssService.fetchAndParseRss(id);
     res.json(result);
   } catch (error) {
     console.error('Error fetching RSS feed:', error);
@@ -97,8 +145,10 @@ const fetchAllRss = async (req, res) => {
 
 const getRssItems = async (req, res) => {
   try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
     const limit = parseInt(req.query.limit) || 100;
-    const items = await rssService.getRssItems(req.params.id, limit);
+    const items = await rssService.getRssItems(id, limit);
     res.json(items);
   } catch (error) {
     console.error('Error fetching RSS items:', error);
@@ -108,7 +158,9 @@ const getRssItems = async (req, res) => {
 
 const clearRssItems = async (req, res) => {
   try {
-    await rssService.clearRssItems(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(404).json({ error: 'RSS feed not found' });
+    await rssService.clearRssItems(id);
     res.json({ success: true });
   } catch (error) {
     console.error('Error clearing RSS items:', error);
@@ -118,8 +170,11 @@ const clearRssItems = async (req, res) => {
 
 const updateRssItem = async (req, res) => {
   try {
+    const id = parseInt(req.params.id, 10);
+    const itemId = parseInt(req.params.itemId, 10);
+    if (isNaN(id) || isNaN(itemId)) return res.status(404).json({ error: 'RSS item not found' });
     const { title, description, link, magnetLink } = req.body;
-    const item = await rssService.updateRssItem(req.params.id, req.params.itemId, { title, description, link, magnetLink });
+    const item = await rssService.updateRssItem(id, itemId, { title, description, link, magnetLink });
     if (!item) {
       return res.status(404).json({ error: 'RSS item not found' });
     }
@@ -132,7 +187,10 @@ const updateRssItem = async (req, res) => {
 
 const downloadRssItem = async (req, res) => {
   try {
-    const result = await rssService.downloadRssItem(req.params.id, req.params.itemId);
+    const id = parseInt(req.params.id, 10);
+    const itemId = parseInt(req.params.itemId, 10);
+    if (isNaN(id) || isNaN(itemId)) return res.status(404).json({ error: 'RSS item not found' });
+    const result = await rssService.downloadRssItem(id, itemId);
     if (!result.success) {
       return res.status(400).json({ error: result.message });
     }

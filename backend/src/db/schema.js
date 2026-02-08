@@ -75,6 +75,9 @@ const rss = pgTable('rss', {
   templateId: integer('template_id').default(0),
   isEnabled: boolean('is_enabled').default(true),
   lastFetchedAt: timestamp('last_fetched_at'),
+  refreshInterval: varchar('refresh_interval').default('1h'),
+  refreshIntervalType: varchar('refresh_interval_type').default('human'),
+  nextFetchAt: timestamp('next_fetch_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [

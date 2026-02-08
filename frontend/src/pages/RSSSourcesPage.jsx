@@ -23,7 +23,7 @@ export function RSSSourcesPage() {
   const [health, setHealth] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [editingFeed, setEditingFeed] = useState(null)
-  const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
+  const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
   const [searchTerm, setSearchTerm] = useState("")
   const [dismissedWarnings, setDismissedWarnings] = useState(new Set())
   const navigate = useNavigate()
@@ -119,7 +119,7 @@ export function RSSSourcesPage() {
 
       setShowModal(false)
       setEditingFeed(null)
-      setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
+      setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
       fetchFeeds()
     } catch (err) {
       setError(err.message)
@@ -168,6 +168,17 @@ export function RSSSourcesPage() {
     } catch (err) {
       setError(err.message)
     }
+  }
+
+  const formatRelativeTime = (date) => {
+    if (!date) return "-"
+    const diff = new Date(date) - new Date()
+    if (diff < 0) return "overdue"
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `in ${mins}m`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `in ${hrs}h`
+    return `in ${Math.floor(hrs / 24)}d`
   }
 
   const filteredFeeds = feeds.filter(f =>
@@ -227,7 +238,7 @@ export function RSSSourcesPage() {
               </div>
               <Button onClick={() => {
                 setEditingFeed(null)
-                setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
+                setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
                 setShowModal(true)
               }}>
                 <Plus size={18} className="mr-2" />
@@ -256,6 +267,7 @@ export function RSSSourcesPage() {
                   <TableHead>Template</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Fetch</TableHead>
+                  <TableHead>Next Fetch</TableHead>
                   <TableHead className="text-right pr-4">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -280,6 +292,9 @@ export function RSSSourcesPage() {
                       {feed.lastFetchedAt
                         ? new Date(feed.lastFetchedAt).toLocaleString()
                         : "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatRelativeTime(feed.nextFetchAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -307,7 +322,9 @@ export function RSSSourcesPage() {
                                 url: feed.url,
                                 description: feed.description || "",
                                 templateId: String(feed.templateId),
-                                isEnabled: feed.isEnabled
+                                isEnabled: feed.isEnabled,
+                                refreshInterval: feed.refreshInterval || "1h",
+                                refreshIntervalType: feed.refreshIntervalType || "human"
                               })
                               setShowModal(true)
                             }}>
@@ -390,6 +407,45 @@ export function RSSSourcesPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>Refresh Interval</Label>
+              <div className="flex gap-2">
+                <Select
+                  value={formData.refreshIntervalType}
+                  onValueChange={(value) => setFormData({ ...formData, refreshIntervalType: value, refreshInterval: value === "cron" ? "0 */1 * * *" : "1h" })}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="human">Simple</SelectItem>
+                    <SelectItem value="cron">Cron</SelectItem>
+                  </SelectContent>
+                </Select>
+                {formData.refreshIntervalType === "human" ? (
+                  <Select
+                    value={formData.refreshInterval}
+                    onValueChange={(value) => setFormData({ ...formData, refreshInterval: value })}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["15m", "30m", "1h", "2h", "4h", "8h", "12h", "24h"].map(v => (
+                        <SelectItem key={v} value={v}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className="flex-1"
+                    value={formData.refreshInterval}
+                    onChange={(e) => setFormData({ ...formData, refreshInterval: e.target.value })}
+                    placeholder="*/30 * * * *"
+                  />
+                )}
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="isEnabled"
@@ -403,7 +459,7 @@ export function RSSSourcesPage() {
             <Button variant="outline" onClick={() => {
               setShowModal(false)
               setEditingFeed(null)
-              setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
+              setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
             }}>
               Cancel
             </Button>

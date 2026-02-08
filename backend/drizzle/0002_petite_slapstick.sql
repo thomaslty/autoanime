@@ -1,0 +1,20 @@
+ALTER TABLE "rss" ALTER COLUMN "template_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rss" ALTER COLUMN "is_enabled" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rss" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rss" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rss_item" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "qbittorrent_downloads" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "qbittorrent_downloads" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "settings" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "settings" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_images" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_images" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_alternate_titles" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_alternate_titles" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_seasons" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_seasons" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_episodes" ALTER COLUMN "created_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "series_episodes" ALTER COLUMN "updated_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "rss" ADD COLUMN "refresh_interval" varchar DEFAULT '1h';--> statement-breakpoint
+ALTER TABLE "rss" ADD COLUMN "refresh_interval_type" varchar DEFAULT 'human';--> statement-breakpoint
+ALTER TABLE "rss" ADD COLUMN "next_fetch_at" timestamp;

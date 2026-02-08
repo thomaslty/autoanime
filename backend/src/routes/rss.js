@@ -4,6 +4,7 @@ const rssController = require('../controllers/rssController');
 
 router.get('/', rssController.getRss);
 router.get('/templates', rssController.getTemplates);
+router.get('/sources', rssController.getRss);
 router.get('/:id', rssController.getRssById);
 router.get('/:id/items', rssController.getRssItems);
 router.delete('/:id/items', rssController.clearRssItems);

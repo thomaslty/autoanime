@@ -6,6 +6,7 @@ const routes = require('./routes');
 const { testConnection } = require('./db/db');
 const sonarrService = require('./services/sonarrService');
 const qbittorrentService = require('./services/qbittorrentService');
+const { startScheduler } = require('./services/rssSchedulerService');
 const { db } = require('./db/db');
 const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
 const { eq, and } = require('drizzle-orm');
@@ -296,6 +297,7 @@ const startServer = async () => {
     console.warn('Database connection failed, starting without DB sync');
   } else {
     await syncOnStartup();
+    startScheduler();
   }
 
   app.listen(PORT, () => {
