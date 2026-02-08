@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
-import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown } from "lucide-react"
+import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -12,6 +12,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Input } from "@/components/ui/input"
 
 const AutoDownloadStatus = {
   DISABLED: 0,
@@ -52,6 +55,11 @@ export function SeriesDetailPage() {
   const [seriesRssConfigId, setSeriesRssConfigId] = useState("")
   const [seasonRssConfigs, setSeasonRssConfigs] = useState({})
   const [savingRss, setSavingRss] = useState(false)
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [previewData, setPreviewData] = useState([])
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewSearch, setPreviewSearch] = useState("")
+  const [previewSort, setPreviewSort] = useState({ field: 'seasonNumber', dir: 'desc' })
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -246,6 +254,26 @@ export function SeriesDetailPage() {
     }
   }
 
+  const openPreviewModal = async () => {
+    setPreviewLoading(true)
+    setShowPreviewModal(true)
+    try {
+      const response = await fetch(`/api/rss-config/preview/series/${id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setPreviewData(data.data || [])
+      } else {
+        console.error("Failed to fetch preview")
+        setPreviewData([])
+      }
+    } catch (err) {
+      console.error("Error fetching preview:", err)
+      setPreviewData([])
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
   const serviceError = getServiceError()
 
   if (loading) {
@@ -371,6 +399,10 @@ export function SeriesDetailPage() {
                       <Rss size={16} className="mr-2" />
                       Configure RSS
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={openPreviewModal}>
+                      <Eye size={16} className="mr-2" />
+                      Preview RSS Matches
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -483,7 +515,7 @@ export function SeriesDetailPage() {
             <h2 className="text-xl font-semibold mb-4">Seasons & Episodes</h2>
             {series.seasons
               .filter(s => s.monitored)
-              .sort((a, b) => a.seasonNumber - b.seasonNumber)
+              .sort((a, b) => b.seasonNumber - a.seasonNumber)
               .map(season => (
                 <SeasonCard
                   key={season.id}
@@ -500,7 +532,7 @@ export function SeriesDetailPage() {
 
       {/* RSS Config Modal */}
       <Dialog open={showRssModal} onOpenChange={setShowRssModal}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Rss size={18} />
@@ -529,7 +561,7 @@ export function SeriesDetailPage() {
                 <Label>Per-Season Overrides</Label>
                 {series.seasons
                   .filter(s => s.monitored)
-                  .sort((a, b) => a.seasonNumber - b.seasonNumber)
+                  .sort((a, b) => b.seasonNumber - a.seasonNumber)
                   .map(season => (
                     <div key={season.seasonNumber} className="flex items-center gap-3">
                       <span className="text-sm w-24 shrink-0">
@@ -562,6 +594,119 @@ export function SeriesDetailPage() {
             <Button onClick={handleSaveRssConfig} disabled={savingRss}>
               {savingRss ? "Saving..." : "Save"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* RSS Preview Modal */}
+      <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
+        <DialogContent className="sm:max-w-[70vw] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye size={18} />
+              RSS Preview - Episode Matches
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col py-4">
+            <div className="mb-4">
+              <Input
+                placeholder="Search episodes or RSS items..."
+                value={previewSearch}
+                onChange={(e) => setPreviewSearch(e.target.value)}
+              />
+            </div>
+            {previewLoading ? (
+              <div className="flex items-center justify-center h-64 text-muted-foreground">
+                Loading preview...
+              </div>
+            ) : previewData.length === 0 ? (
+              <div className="flex items-center justify-center h-64 text-muted-foreground">
+                No episodes found or no RSS config assigned
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto">
+                <table className="w-full caption-bottom text-sm">
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow>
+                      <TableHead
+                        className="cursor-pointer"
+                        onClick={() => setPreviewSort({ field: 'seasonNumber', dir: previewSort.field === 'seasonNumber' && previewSort.dir === 'asc' ? 'desc' : 'asc' })}
+                      >
+                        Season {previewSort.field === 'seasonNumber' && (previewSort.dir === 'asc' ? '↑' : '↓')}
+                      </TableHead>
+                      <TableHead
+                        className="cursor-pointer"
+                        onClick={() => setPreviewSort({ field: 'episodeNumber', dir: previewSort.field === 'episodeNumber' && previewSort.dir === 'asc' ? 'desc' : 'asc' })}
+                      >
+                        Episode {previewSort.field === 'episodeNumber' && (previewSort.dir === 'asc' ? '↑' : '↓')}
+                      </TableHead>
+                      <TableHead>Episode Title</TableHead>
+                      <TableHead>RSS Item Title</TableHead>
+                      <TableHead>RSS Link</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewData
+                      .filter(item =>
+                        previewSearch === "" ||
+                        (item.episodeTitle && item.episodeTitle.toLowerCase().includes(previewSearch.toLowerCase())) ||
+                        (item.rssItemTitle && item.rssItemTitle.toLowerCase().includes(previewSearch.toLowerCase()))
+                      )
+                      .sort((a, b) => {
+                        let av = a[previewSort.field]
+                        let bv = b[previewSort.field]
+                        if (previewSort.field === 'episodeNumber') {
+                          av = Number(av) || 0
+                          bv = Number(bv) || 0
+                        }
+                        if (av < bv) return previewSort.dir === 'asc' ? -1 : 1
+                        if (av > bv) return previewSort.dir === 'asc' ? 1 : -1
+                        return 0
+                      })
+                      .map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>S{item.seasonNumber}</TableCell>
+                          <TableCell>E{item.episodeNumber}</TableCell>
+                          <TableCell className="max-w-md truncate">{item.episodeTitle || "-"}</TableCell>
+                          <TableCell className="max-w-md truncate">
+                            {item.rssItemTitle ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-help text-green-600">{item.rssItemTitle}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs">{item.rssItemTitle}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-muted-foreground italic">No match</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {item.rssItemLink ? (
+                              <a
+                                href={item.rssItemLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline text-sm"
+                              >
+                                Open
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </table>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

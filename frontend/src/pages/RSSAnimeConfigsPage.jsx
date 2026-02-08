@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react"
+import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye, ChevronUp, ChevronDown, ChevronsUpDown, HelpCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,8 +12,9 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
-const EMPTY_FORM = { name: "", description: "", regex: "", rssSourceId: "", isEnabled: true }
+const EMPTY_FORM = { name: "", description: "", regex: "", rssSourceId: "", offset: "", isEnabled: true }
 
 export function RSSAnimeConfigsPage() {
   const [configs, setConfigs] = useState([])
@@ -145,6 +146,7 @@ export function RSSAnimeConfigsPage() {
         body: JSON.stringify({
           ...formData,
           rssSourceId: formData.rssSourceId ? parseInt(formData.rssSourceId) : null,
+          offset: formData.offset ? parseInt(formData.offset, 10) : null,
         })
       })
 
@@ -356,6 +358,7 @@ export function RSSAnimeConfigsPage() {
                               description: config.description || "",
                               regex: config.regex,
                               rssSourceId: config.rssSourceId ? String(config.rssSourceId) : "",
+                              offset: config.offset !== null && config.offset !== undefined ? String(config.offset) : "",
                               isEnabled: config.isEnabled
                             })
                             setPreview(null)
@@ -454,6 +457,30 @@ export function RSSAnimeConfigsPage() {
               />
               {regexError && <p className="text-xs text-destructive">{regexError}</p>}
               <p className="text-xs text-muted-foreground">Case-insensitive regex to match RSS item titles</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="offset">Episode Offset (optional)</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle size={16} className="text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Some anime releases continue episode numbering from previous seasons. For example, S02E01 might be labeled as E13 if S01 had 12 episodes. Set offset to subtract from the episode number (e.g., offset 12 means E13 → E1).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Input
+                id="offset"
+                type="number"
+                min="0"
+                value={formData.offset}
+                onChange={(e) => setFormData({ ...formData, offset: e.target.value })}
+                placeholder="e.g. 12"
+              />
+              <p className="text-xs text-muted-foreground">Offset subtracted from RSS episode numbers (e.g., 12 means E13 becomes E1)</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="source">RSS Source (optional)</Label>

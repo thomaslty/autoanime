@@ -179,57 +179,59 @@ export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownl
   return (
     <Collapsible defaultOpen={season.monitored}>
       <Card>
-        <CollapsibleTrigger className="w-full">
-          <CardHeader className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={isAutoDownloadEnabled}
-                    onCheckedChange={(checked) => onToggleSeasonAutoDownload(season.seasonNumber, checked)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+        <CardHeader className="p-4">
+          <div className="flex items-center justify-between">
+            <CollapsibleTrigger className="flex-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <CardTitle className="text-lg">Season {season.seasonNumber}</CardTitle>
+                  {season.monitored ? (
+                    <Badge variant="secondary" className="bg-green-500/20 text-green-500 hover:bg-green-500/30">
+                      <Eye className="h-3 w-3 mr-1" />
+                      Monitored
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="bg-muted text-muted-foreground">
+                      Not Monitored
+                    </Badge>
+                  )}
+                  {getStatusBadge()}
                 </div>
-                {season.monitored ? (
-                  <Badge variant="secondary" className="bg-green-500/20 text-green-500 hover:bg-green-500/30">
-                    <Eye className="h-3 w-3 mr-1" />
-                    Monitored
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className="bg-muted text-muted-foreground">
-                    Not Monitored
-                  </Badge>
-                )}
-                {getStatusBadge()}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <p className="text-sm font-medium">
-                    {downloadedCount}/{totalCount} Episodes
-                  </p>
-                  {season.monitored && progress < 100 && progress > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {Math.round(progress)}% Complete
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-sm font-medium">
+                      {downloadedCount}/{totalCount} Episodes
                     </p>
-                  )}
+                    {season.monitored && progress < 100 && progress > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {Math.round(progress)}% Complete
+                      </p>
+                    )}
+                  </div>
+                  <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
                 </div>
-                <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
               </div>
+              {season.monitored && (
+                <div className="mt-2 h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full transition-all",
+                      progress === 100 ? "bg-green-500" : "bg-yellow-500"
+                    )}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
+            </CollapsibleTrigger>
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l">
+              <span className="text-sm text-muted-foreground">Auto</span>
+              <Switch
+                checked={isAutoDownloadEnabled}
+                onCheckedChange={(checked) => onToggleSeasonAutoDownload(season.seasonNumber, checked)}
+              />
             </div>
-            {season.monitored && (
-              <div className="mt-2 h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                <div
-                  className={cn(
-                    "h-full transition-all",
-                    progress === 100 ? "bg-green-500" : "bg-yellow-500"
-                  )}
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            )}
-          </CardHeader>
-        </CollapsibleTrigger>
+          </div>
+        </CardHeader>
         <CollapsibleContent>
           <CardContent className="p-0 pt-0">
             {monitoredEpisodes.length > 0 ? (

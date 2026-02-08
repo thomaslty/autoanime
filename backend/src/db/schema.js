@@ -54,6 +54,7 @@ const rssConfig = pgTable('rss_config', {
   description: text('description'),
   regex: text('regex').notNull(),
   rssSourceId: integer('rss_source_id').references(() => rss.id, { onDelete: 'set null' }),
+  offset: integer('offset'),
   isEnabled: boolean('is_enabled').default(true),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -207,6 +208,7 @@ const seriesEpisodes = pgTable('series_episodes', {
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
   autoDownloadStatus: integer('auto_download_status').default(0),
   downloadedAt: timestamp('downloaded_at'),
+  rssItemId: integer('rss_item_id').references(() => rssItem.id, { onDelete: 'set null' }),
 
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -214,6 +216,7 @@ const seriesEpisodes = pgTable('series_episodes', {
   index('idx_episodes_series').on(table.seriesId),
   index('idx_episodes_season').on(table.seasonId),
   index('idx_episodes_sonarr_id').on(table.sonarrEpisodeId),
+  index('idx_episodes_rss_item').on(table.rssItemId),
 ]);
 
 module.exports = {

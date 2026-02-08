@@ -1,10 +1,28 @@
 const { fetchAndParseRss, getOverdueFeeds } = require('./rssService');
 const { db } = require('../db/db');
-const { series, seriesSeasons, rssConfig, rssItem } = require('../db/schema');
-const { eq, and, isNotNull } = require('drizzle-orm');
+const { series, seriesSeasons, rssConfig, rssItem, seriesEpisodes } = require('../db/schema');
+const { eq, and, isNotNull, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 
 let schedulerInterval = null;
+
+const extractEpisodeNumber = (title) => {
+  // Try common patterns: E13, Episode 13, - 13, 13th, etc.
+  const patterns = [
+    /E(\d+)/i,
+    /Episode\s+(\d+)/i,
+    /-\s*(\d+)\s*\[/,
+    /\b(\d+)\s*(?:th|st|nd|rd)?\s*(?:episode|ep)?\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+  }
+  return null;
+};
 
 const triggerAutoDownloads = async (rssId, newItems) => {
   if (!newItems || newItems.length === 0) return;
@@ -16,6 +34,7 @@ const triggerAutoDownloads = async (rssId, newItems) => {
       title: series.title,
       rssConfigId: series.rssConfigId,
       configRegex: rssConfig.regex,
+      configOffset: rssConfig.offset,
     })
       .from(series)
       .innerJoin(rssConfig, eq(series.rssConfigId, rssConfig.id))
@@ -31,6 +50,7 @@ const triggerAutoDownloads = async (rssId, newItems) => {
       seasonNumber: seriesSeasons.seasonNumber,
       rssConfigId: seriesSeasons.rssConfigId,
       configRegex: rssConfig.regex,
+      configOffset: rssConfig.offset,
     })
       .from(seriesSeasons)
       .innerJoin(rssConfig, eq(seriesSeasons.rssConfigId, rssConfig.id))
@@ -52,6 +72,25 @@ const triggerAutoDownloads = async (rssId, newItems) => {
           // Check if this series has a season-level override that would handle this
           const hasSeasonOverride = seasonsList.some(ss => ss.seriesId === s.id);
           if (!hasSeasonOverride) {
+            // Extract episode number and apply offset
+            const rssEpisodeNumber = extractEpisodeNumber(item.title);
+            if (rssEpisodeNumber !== null && s.configOffset) {
+              const actualEpisodeNumber = rssEpisodeNumber - s.configOffset;
+              // Find and update the episode
+              const episode = await db.select({ id: seriesEpisodes.id })
+                .from(seriesEpisodes)
+                .where(and(
+                  eq(seriesEpisodes.seriesId, s.id),
+                  eq(seriesEpisodes.episodeNumber, actualEpisodeNumber)
+                ))
+                .limit(1);
+              if (episode[0]) {
+                await db.update(seriesEpisodes)
+                  .set({ rssItemId: item.id, updatedAt: new Date() })
+                  .where(eq(seriesEpisodes.id, episode[0].id));
+              }
+            }
+
             logger.info({ series: s.title, item: item.title }, 'Auto-download match for series');
             const result = await qbittorrentService.addMagnet(item.magnetLink);
             if (result.success) {
@@ -67,6 +106,26 @@ const triggerAutoDownloads = async (rssId, newItems) => {
       for (const season of seasonsList) {
         const pattern = new RegExp(season.configRegex, 'i');
         if (pattern.test(item.title)) {
+          // Extract episode number and apply offset
+          const rssEpisodeNumber = extractEpisodeNumber(item.title);
+          if (rssEpisodeNumber !== null && season.configOffset) {
+            const actualEpisodeNumber = rssEpisodeNumber - season.configOffset;
+            // Find and update the episode
+            const episode = await db.select({ id: seriesEpisodes.id })
+              .from(seriesEpisodes)
+              .where(and(
+                eq(seriesEpisodes.seriesId, season.seriesId),
+                eq(seriesEpisodes.seasonNumber, season.seasonNumber),
+                eq(seriesEpisodes.episodeNumber, actualEpisodeNumber)
+              ))
+              .limit(1);
+            if (episode[0]) {
+              await db.update(seriesEpisodes)
+                .set({ rssItemId: item.id, updatedAt: new Date() })
+                .where(eq(seriesEpisodes.id, episode[0].id));
+            }
+          }
+
           logger.info({ seriesId: season.seriesId, season: season.seasonNumber, item: item.title }, 'Auto-download match for season');
           const result = await qbittorrentService.addMagnet(item.magnetLink);
           if (result.success) {

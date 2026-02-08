@@ -26,14 +26,14 @@ const getConfigById = async (req, res) => {
 
 const createConfig = async (req, res) => {
   try {
-    const { name, description, regex, rssSourceId, isEnabled } = req.body;
+    const { name, description, regex, rssSourceId, offset, isEnabled } = req.body;
     if (!name || !regex) {
       return res.status(400).json({ error: 'Name and regex are required' });
     }
     try { new RegExp(regex); } catch {
       return res.status(400).json({ error: 'Invalid regex pattern' });
     }
-    const config = await rssConfigService.createConfig({ name, description, regex, rssSourceId, isEnabled });
+    const config = await rssConfigService.createConfig({ name, description, regex, rssSourceId, offset, isEnabled });
     res.status(201).json(config);
   } catch (error) {
     logger.error({ error }, 'Error creating RSS config');
@@ -45,13 +45,13 @@ const updateConfig = async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(404).json({ error: 'RSS config not found' });
-    const { name, description, regex, rssSourceId, isEnabled } = req.body;
+    const { name, description, regex, rssSourceId, offset, isEnabled } = req.body;
     if (regex !== undefined) {
       try { new RegExp(regex); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
       }
     }
-    const config = await rssConfigService.updateConfig(id, { name, description, regex, rssSourceId, isEnabled });
+    const config = await rssConfigService.updateConfig(id, { name, description, regex, rssSourceId, offset, isEnabled });
     if (!config) return res.status(404).json({ error: 'RSS config not found' });
     res.json(config);
   } catch (error) {
@@ -116,6 +116,19 @@ const assignToSeason = async (req, res) => {
   }
 };
 
+const getSeriesRssPreview = async (req, res) => {
+  try {
+    const seriesId = parseInt(req.params.seriesId, 10);
+    if (isNaN(seriesId)) return res.status(404).json({ error: 'Series not found' });
+    const result = await rssConfigService.getSeriesRssPreview(seriesId);
+    if (!result.success) return res.status(400).json({ error: result.message });
+    res.json(result);
+  } catch (error) {
+    logger.error({ error }, 'Error getting series RSS preview');
+    res.status(500).json({ error: 'Failed to get series RSS preview' });
+  }
+};
+
 module.exports = {
   getConfigs,
   getConfigById,
@@ -125,4 +138,5 @@ module.exports = {
   previewConfig,
   assignToSeries,
   assignToSeason,
+  getSeriesRssPreview,
 };
