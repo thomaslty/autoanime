@@ -1,6 +1,7 @@
 const rssService = require('../services/rssService');
 const { getAvailableTemplates, getTemplateName } = require('../rss_parsers');
 const { CronExpressionParser } = require('cron-parser');
+const { logger } = require('../utils/logger');
 
 const validateInterval = (type, interval) => {
   if (type === 'cron') {
@@ -28,7 +29,7 @@ const getRss = async (req, res) => {
     const feeds = await rssService.getAllRss();
     res.json(feeds);
   } catch (error) {
-    console.error('Error fetching RSS feeds:', error);
+    logger.error({ error }, 'Error fetching RSS feeds');
     res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 };
@@ -45,7 +46,7 @@ const getRssById = async (req, res) => {
     }
     res.json(feed);
   } catch (error) {
-    console.error('Error fetching RSS feed:', error);
+    logger.error({ error }, 'Error fetching RSS feed');
     res.status(500).json({ error: 'Failed to fetch RSS feed' });
   }
 };
@@ -64,7 +65,7 @@ const createRss = async (req, res) => {
     const feed = await rssService.createRss({ name, description, url, templateId, isEnabled, refreshInterval: interval, refreshIntervalType: intervalType });
     res.status(201).json(feed);
   } catch (error) {
-    console.error('Error creating RSS feed:', error);
+    logger.error({ error }, 'Error creating RSS feed');
     res.status(500).json({ error: 'Failed to create RSS feed' });
   }
 };
@@ -89,7 +90,7 @@ const updateRss = async (req, res) => {
     }
     res.json(feed);
   } catch (error) {
-    console.error('Error updating RSS feed:', error);
+    logger.error({ error }, 'Error updating RSS feed');
     res.status(500).json({ error: 'Failed to update RSS feed' });
   }
 };
@@ -101,7 +102,7 @@ const deleteRss = async (req, res) => {
     await rssService.deleteRss(id);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting RSS feed:', error);
+    logger.error({ error }, 'Error deleting RSS feed');
     res.status(500).json({ error: 'Failed to delete RSS feed' });
   }
 };
@@ -116,7 +117,7 @@ const toggleRss = async (req, res) => {
     }
     res.json(feed);
   } catch (error) {
-    console.error('Error toggling RSS feed:', error);
+    logger.error({ error }, 'Error toggling RSS feed');
     res.status(500).json({ error: 'Failed to toggle RSS feed' });
   }
 };
@@ -128,7 +129,7 @@ const fetchRss = async (req, res) => {
     const result = await rssService.fetchAndParseRss(id);
     res.json(result);
   } catch (error) {
-    console.error('Error fetching RSS feed:', error);
+    logger.error({ error }, 'Error fetching RSS feed');
     res.status(500).json({ error: 'Failed to fetch RSS feed' });
   }
 };
@@ -138,7 +139,7 @@ const fetchAllRss = async (req, res) => {
     const results = await rssService.fetchAllRss();
     res.json(results);
   } catch (error) {
-    console.error('Error fetching all RSS feeds:', error);
+    logger.error({ error }, 'Error fetching all RSS feeds');
     res.status(500).json({ error: 'Failed to fetch RSS feeds' });
   }
 };
@@ -151,7 +152,7 @@ const getRssItems = async (req, res) => {
     const items = await rssService.getRssItems(id, limit);
     res.json(items);
   } catch (error) {
-    console.error('Error fetching RSS items:', error);
+    logger.error({ error }, 'Error fetching RSS items');
     res.status(500).json({ error: 'Failed to fetch RSS items' });
   }
 };
@@ -163,7 +164,7 @@ const clearRssItems = async (req, res) => {
     await rssService.clearRssItems(id);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error clearing RSS items:', error);
+    logger.error({ error }, 'Error clearing RSS items');
     res.status(500).json({ error: 'Failed to clear RSS items' });
   }
 };
@@ -180,7 +181,7 @@ const updateRssItem = async (req, res) => {
     }
     res.json(item);
   } catch (error) {
-    console.error('Error updating RSS item:', error);
+    logger.error({ error }, 'Error updating RSS item');
     res.status(500).json({ error: 'Failed to update RSS item' });
   }
 };
@@ -196,7 +197,7 @@ const downloadRssItem = async (req, res) => {
     }
     res.json(result);
   } catch (error) {
-    console.error('Error downloading RSS item:', error);
+    logger.error({ error }, 'Error downloading RSS item');
     res.status(500).json({ error: 'Failed to download RSS item' });
   }
 };
@@ -206,7 +207,7 @@ const getTemplates = async (req, res) => {
     const templates = getAvailableTemplates();
     res.json(templates);
   } catch (error) {
-    console.error('Error fetching templates:', error);
+    logger.error({ error }, 'Error fetching templates');
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 };

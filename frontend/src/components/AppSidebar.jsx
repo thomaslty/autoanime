@@ -72,6 +72,18 @@ function AppSidebar() {
     return () => clearInterval(interval)
   }, [])
 
+  // Auto-expand menu when child route is active
+  useEffect(() => {
+    navItems.forEach(item => {
+      if (item.items) {
+        const isChildActive = item.items.some(sub => currentPath.startsWith(sub.href))
+        if (isChildActive) {
+          setOpenMenus(prev => ({ ...prev, [item.href]: true }))
+        }
+      }
+    })
+  }, [currentPath])
+
   const toggleMenu = (href) => {
     setOpenMenus((prev) => ({
       ...prev,

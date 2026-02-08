@@ -2,6 +2,7 @@ const { fetchAndParseRss, getOverdueFeeds } = require('./rssService');
 const { db } = require('../db/db');
 const { series, seriesSeasons, rssConfig, rssItem } = require('../db/schema');
 const { eq, and, isNotNull } = require('drizzle-orm');
+const { logger } = require('../utils/logger');
 
 let schedulerInterval = null;
 
@@ -51,12 +52,12 @@ const triggerAutoDownloads = async (rssId, newItems) => {
           // Check if this series has a season-level override that would handle this
           const hasSeasonOverride = seasonsList.some(ss => ss.seriesId === s.id);
           if (!hasSeasonOverride) {
-            console.log(`[RSS Auto-Download] Match for "${s.title}": ${item.title}`);
+            logger.info({ series: s.title, item: item.title }, 'Auto-download match for series');
             const result = await qbittorrentService.addMagnet(item.magnetLink);
             if (result.success) {
-              console.log(`[RSS Auto-Download] Download triggered for: ${item.title}`);
+              logger.info({ item: item.title }, 'Auto-download triggered');
             } else {
-              console.error(`[RSS Auto-Download] Failed to download: ${item.title} - ${result.message}`);
+              logger.error({ item: item.title, error: result.message }, 'Auto-download failed');
             }
           }
         }
@@ -66,18 +67,18 @@ const triggerAutoDownloads = async (rssId, newItems) => {
       for (const season of seasonsList) {
         const pattern = new RegExp(season.configRegex, 'i');
         if (pattern.test(item.title)) {
-          console.log(`[RSS Auto-Download] Season match for series #${season.seriesId} S${season.seasonNumber}: ${item.title}`);
+          logger.info({ seriesId: season.seriesId, season: season.seasonNumber, item: item.title }, 'Auto-download match for season');
           const result = await qbittorrentService.addMagnet(item.magnetLink);
           if (result.success) {
-            console.log(`[RSS Auto-Download] Download triggered for: ${item.title}`);
+            logger.info({ item: item.title }, 'Auto-download triggered');
           } else {
-            console.error(`[RSS Auto-Download] Failed to download: ${item.title} - ${result.message}`);
+            logger.error({ item: item.title, error: result.message }, 'Auto-download failed');
           }
         }
       }
     }
   } catch (error) {
-    console.error('[RSS Auto-Download] Error processing auto-downloads:', error.message);
+    logger.error({ error: error.message }, 'Error processing auto-downloads');
   }
 };
 
@@ -86,27 +87,27 @@ const runScheduler = async () => {
     const overdueFeeds = await getOverdueFeeds();
     if (overdueFeeds.length === 0) return;
 
-    console.log(`[RSS Scheduler] Fetching ${overdueFeeds.length} overdue feed(s)...`);
+    logger.info({ feedCount: overdueFeeds.length }, 'Fetching overdue feeds');
     for (const feed of overdueFeeds) {
       try {
         const result = await fetchAndParseRss(feed.id);
-        console.log(`[RSS Scheduler] Feed #${feed.id} "${feed.name}": ${result.message}`);
+        logger.info({ feedId: feed.id, feedName: feed.name, message: result.message }, 'Feed fetch result');
 
         if (result.success && result.newItemsList && result.newItemsList.length > 0) {
           await triggerAutoDownloads(feed.id, result.newItemsList);
         }
       } catch (error) {
-        console.error(`[RSS Scheduler] Failed to fetch feed #${feed.id} "${feed.name}":`, error.message);
+        logger.error({ feedId: feed.id, feedName: feed.name, error: error.message }, 'Failed to fetch feed');
       }
     }
   } catch (error) {
-    console.error('[RSS Scheduler] Error during scheduled run:', error.message);
+    logger.error({ error: error.message }, 'Error during scheduled run');
   }
 };
 
 const startScheduler = () => {
   if (schedulerInterval) return;
-  console.log('[RSS Scheduler] Starting (checks every 60s)');
+  logger.info('RSS Scheduler starting (checks every 60s)');
   schedulerInterval = setInterval(runScheduler, 60 * 1000);
 };
 
@@ -114,7 +115,7 @@ const stopScheduler = () => {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    console.log('[RSS Scheduler] Stopped');
+    logger.info('RSS Scheduler stopped');
   }
 };
 

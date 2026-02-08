@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, X, Eye, MoreHorizontal, Trash } from "lucide-react"
+import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, X, Eye, MoreHorizontal, Trash, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -26,6 +26,11 @@ export function RSSSourcesPage() {
   const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
   const [searchTerm, setSearchTerm] = useState("")
   const [dismissedWarnings, setDismissedWarnings] = useState(new Set())
+  const [fetchingId, setFetchingId] = useState(null)
+  const [sortField, setSortField] = useState("id")
+  const [sortDir, setSortDir] = useState("desc")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const navigate = useNavigate()
 
   const fetchFeeds = async () => {
@@ -149,12 +154,15 @@ export function RSSSourcesPage() {
   }
 
   const handleFetch = async (id) => {
+    setFetchingId(id)
     try {
       const response = await fetch(`/api/rss/${id}/fetch`, { method: "POST" })
       if (!response.ok) throw new Error("Failed to fetch feed")
       fetchFeeds()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setFetchingId(null)
     }
   }
 
@@ -181,10 +189,47 @@ export function RSSSourcesPage() {
     return `in ${Math.floor(hrs / 24)}d`
   }
 
-  const filteredFeeds = feeds.filter(f =>
-    f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.url.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const handleSort = (field) => {
+    setPage(1)
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDir(field === "lastFetchedAt" || field === "nextFetchAt" ? "desc" : "asc")
+    }
+  }
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ChevronsUpDown size={14} className="ml-1 opacity-40" />
+    return sortDir === "asc" ? <ChevronUp size={14} className="ml-1" /> : <ChevronDown size={14} className="ml-1" />
+  }
+
+  const sortedFeeds = useMemo(() => {
+    const filtered = feeds.filter(f =>
+      f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.url.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    return [...filtered].sort((a, b) => {
+      let av = a[sortField], bv = b[sortField]
+      if (sortField === "lastFetchedAt" || sortField === "nextFetchAt") {
+        av = av ? new Date(av).getTime() : 0
+        bv = bv ? new Date(bv).getTime() : 0
+      } else if (sortField === "id") {
+        av = Number(av) || 0
+        bv = Number(bv) || 0
+      } else {
+        av = (av || "").toLowerCase()
+        bv = (bv || "").toLowerCase()
+      }
+      if (av < bv) return sortDir === "asc" ? -1 : 1
+      if (av > bv) return sortDir === "asc" ? 1 : -1
+      return 0
+    })
+  }, [feeds, searchTerm, sortField, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedFeeds.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pagedFeeds = sortedFeeds.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   const activeWarnings = getServiceWarnings().filter(w => !dismissedWarnings.has(w.key))
 
@@ -232,7 +277,7 @@ export function RSSSourcesPage() {
                 <Input
                   placeholder="Search feeds..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                   className="pl-10"
                 />
               </div>
@@ -253,104 +298,151 @@ export function RSSSourcesPage() {
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               Loading...
             </div>
-          ) : filteredFeeds.length === 0 ? (
+          ) : sortedFeeds.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               {searchTerm ? "No feeds found" : "No RSS feeds configured"}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-4">ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Template</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Fetch</TableHead>
-                  <TableHead>Next Fetch</TableHead>
-                  <TableHead className="text-right pr-4">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredFeeds.map((feed) => (
-                  <TableRow key={feed.id}>
-                    <TableCell className="text-muted-foreground pl-4">#{feed.id}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{feed.name}</div>
-                      {feed.description && <div className="text-xs text-muted-foreground">{feed.description}</div>}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">{feed.url}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{getTemplateName(feed.templateId)}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={feed.isEnabled ? "default" : "secondary"}>
-                        {feed.isEnabled ? "Enabled" : "Disabled"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {feed.lastFetchedAt
-                        ? new Date(feed.lastFetchedAt).toLocaleString()
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatRelativeTime(feed.nextFetchAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleFetch(feed.id)} title="Fetch">
-                          <RefreshCw size={16} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => navigate(`/rss/${feed.id}/items`)} title="View Items">
-                          <Eye size={16} />
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" title="Manage">
-                              <MoreHorizontal size={16} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleToggle(feed.id)}>
-                              {feed.isEnabled ? <PowerOff size={14} className="mr-2" /> : <Power size={14} className="mr-2" />}
-                              {feed.isEnabled ? "Disable" : "Enable"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
-                              setEditingFeed(feed)
-                              setFormData({
-                                name: feed.name,
-                                url: feed.url,
-                                description: feed.description || "",
-                                templateId: String(feed.templateId),
-                                isEnabled: feed.isEnabled,
-                                refreshInterval: feed.refreshInterval || "1h",
-                                refreshIntervalType: feed.refreshIntervalType || "human"
-                              })
-                              setShowModal(true)
-                            }}>
-                              <Edit2 size={14} className="mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleClearItems(feed.id)}>
-                              <Trash size={14} className="mr-2" />
-                              Clear RSS Items
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(feed.id)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 size={14} className="mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4 cursor-pointer select-none" onClick={() => handleSort("id")}>
+                      <span className="inline-flex items-center">ID<SortIcon field="id" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("name")}>
+                      <span className="inline-flex items-center">Name<SortIcon field="name" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("url")}>
+                      <span className="inline-flex items-center">URL<SortIcon field="url" /></span>
+                    </TableHead>
+                    <TableHead>Template</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("isEnabled")}>
+                      <span className="inline-flex items-center">Status<SortIcon field="isEnabled" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("lastFetchedAt")}>
+                      <span className="inline-flex items-center">Last Fetch<SortIcon field="lastFetchedAt" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("nextFetchAt")}>
+                      <span className="inline-flex items-center">Next Fetch<SortIcon field="nextFetchAt" /></span>
+                    </TableHead>
+                    <TableHead className="text-right pr-4">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {pagedFeeds.map((feed) => (
+                    <TableRow key={feed.id}>
+                      <TableCell className="text-muted-foreground pl-4">#{feed.id}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{feed.name}</div>
+                        {feed.description && <div className="text-xs text-muted-foreground">{feed.description}</div>}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-muted-foreground">{feed.url}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getTemplateName(feed.templateId)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={feed.isEnabled ? "default" : "secondary"}>
+                          {feed.isEnabled ? "Enabled" : "Disabled"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {feed.lastFetchedAt
+                          ? new Date(feed.lastFetchedAt).toLocaleString()
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatRelativeTime(feed.nextFetchAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => handleFetch(feed.id)} title="Fetch" disabled={fetchingId === feed.id}>
+                            <RefreshCw size={16} className={fetchingId === feed.id ? "animate-spin" : ""} />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => navigate(`/rss/${feed.id}/items`)} title="View Items">
+                            <Eye size={16} />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" title="Manage">
+                                <MoreHorizontal size={16} />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleToggle(feed.id)}>
+                                {feed.isEnabled ? <PowerOff size={14} className="mr-2" /> : <Power size={14} className="mr-2" />}
+                                {feed.isEnabled ? "Disable" : "Enable"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => {
+                                setEditingFeed(feed)
+                                setFormData({
+                                  name: feed.name,
+                                  url: feed.url,
+                                  description: feed.description || "",
+                                  templateId: String(feed.templateId),
+                                  isEnabled: feed.isEnabled,
+                                  refreshInterval: feed.refreshInterval || "1h",
+                                  refreshIntervalType: feed.refreshIntervalType || "human"
+                                })
+                                setShowModal(true)
+                              }}>
+                                <Edit2 size={14} className="mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleClearItems(feed.id)}>
+                                <Trash size={14} className="mr-2" />
+                                Clear RSS Items
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(feed.id)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 size={14} className="mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span>Rows per page</span>
+                  <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
+                    <SelectTrigger className="h-8 w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="200">200</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>{(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sortedFeeds.length)} of {sortedFeeds.length}</span>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={safePage === 1}>
+                      «
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
+                      ‹
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
+                      ›
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={safePage === totalPages}>
+                      »
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </Card>
       </div>

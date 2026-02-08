@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye } from "lucide-react"
+import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -28,6 +28,10 @@ export function RSSAnimeConfigsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [preview, setPreview] = useState(null)
   const [previewing, setPreviewing] = useState(false)
+  const [sortField, setSortField] = useState("id")
+  const [sortDir, setSortDir] = useState("desc")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const navigate = useNavigate()
 
   const fetchData = async () => {
@@ -190,10 +194,52 @@ export function RSSAnimeConfigsPage() {
     return s ? s.name : "-"
   }
 
-  const filteredConfigs = configs.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.description || "").toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const handleSort = (field) => {
+    setPage(1)
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDir("asc")
+    }
+  }
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ChevronsUpDown size={14} className="ml-1 opacity-40" />
+    return sortDir === "asc" ? <ChevronUp size={14} className="ml-1" /> : <ChevronDown size={14} className="ml-1" />
+  }
+
+  const sortedConfigs = useMemo(() => {
+    const filtered = configs.filter(c =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.description || "").toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    return [...filtered].sort((a, b) => {
+      let av = a[sortField], bv = b[sortField]
+      if (sortField === "id") {
+        av = Number(av) || 0
+        bv = Number(bv) || 0
+      } else if (sortField === "rssSourceId") {
+        av = getSourceName(av) || ""
+        bv = getSourceName(bv) || ""
+        av = av.toLowerCase()
+        bv = bv.toLowerCase()
+      } else if (typeof av === "boolean") {
+        av = av ? 1 : 0
+        bv = bv ? 1 : 0
+      } else {
+        av = (av || "").toLowerCase()
+        bv = (bv || "").toLowerCase()
+      }
+      if (av < bv) return sortDir === "asc" ? -1 : 1
+      if (av > bv) return sortDir === "asc" ? 1 : -1
+      return 0
+    })
+  }, [configs, searchTerm, sortField, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedConfigs.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pagedConfigs = sortedConfigs.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   const serviceError = getServiceError()
 
@@ -233,7 +279,7 @@ export function RSSAnimeConfigsPage() {
                 <Input
                   placeholder="Search configs..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                   className="pl-10"
                 />
               </div>
@@ -256,66 +302,111 @@ export function RSSAnimeConfigsPage() {
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               Loading...
             </div>
-          ) : filteredConfigs.length === 0 ? (
+          ) : sortedConfigs.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               {searchTerm ? "No configs found" : "No RSS configs configured"}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Regex</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredConfigs.map((config) => (
-                  <TableRow key={config.id}>
-                    <TableCell className="text-muted-foreground">#{config.id}</TableCell>
-                    <TableCell>
-                      <div>{config.name}</div>
-                      {config.description && <div className="text-xs text-muted-foreground">{config.description}</div>}
-                    </TableCell>
-                    <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{config.regex}</TableCell>
-                    <TableCell className="text-muted-foreground">{getSourceName(config.rssSourceId)}</TableCell>
-                    <TableCell>
-                      <Badge variant={config.isEnabled ? "default" : "secondary"}>
-                        {config.isEnabled ? "Enabled" : "Disabled"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleToggle(config)} title={config.isEnabled ? "Disable" : "Enable"}>
-                          {config.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          setEditingConfig(config)
-                          setFormData({
-                            name: config.name,
-                            description: config.description || "",
-                            regex: config.regex,
-                            rssSourceId: config.rssSourceId ? String(config.rssSourceId) : "",
-                            isEnabled: config.isEnabled
-                          })
-                          setPreview(null)
-                          setRegexError(null)
-                          setShowModal(true)
-                        }} title="Edit">
-                          <Edit2 size={16} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(config.id)} title="Delete" className="hover:text-destructive">
-                          <Trash2 size={16} />
-                        </Button>
-                      </div>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("id")}>
+                      <span className="inline-flex items-center">ID<SortIcon field="id" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("name")}>
+                      <span className="inline-flex items-center">Name<SortIcon field="name" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("regex")}>
+                      <span className="inline-flex items-center">Regex<SortIcon field="regex" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("rssSourceId")}>
+                      <span className="inline-flex items-center">Source<SortIcon field="rssSourceId" /></span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("isEnabled")}>
+                      <span className="inline-flex items-center">Status<SortIcon field="isEnabled" /></span>
+                    </TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {pagedConfigs.map((config) => (
+                    <TableRow key={config.id}>
+                      <TableCell className="text-muted-foreground">#{config.id}</TableCell>
+                      <TableCell>
+                        <div>{config.name}</div>
+                        {config.description && <div className="text-xs text-muted-foreground">{config.description}</div>}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{config.regex}</TableCell>
+                      <TableCell className="text-muted-foreground">{getSourceName(config.rssSourceId)}</TableCell>
+                      <TableCell>
+                        <Badge variant={config.isEnabled ? "default" : "secondary"}>
+                          {config.isEnabled ? "Enabled" : "Disabled"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => handleToggle(config)} title={config.isEnabled ? "Disable" : "Enable"}>
+                            {config.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setEditingConfig(config)
+                            setFormData({
+                              name: config.name,
+                              description: config.description || "",
+                              regex: config.regex,
+                              rssSourceId: config.rssSourceId ? String(config.rssSourceId) : "",
+                              isEnabled: config.isEnabled
+                            })
+                            setPreview(null)
+                            setRegexError(null)
+                            setShowModal(true)
+                          }} title="Edit">
+                            <Edit2 size={16} />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(config.id)} title="Delete" className="hover:text-destructive">
+                            <Trash2 size={16} />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span>Rows per page</span>
+                  <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
+                    <SelectTrigger className="h-8 w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="200">200</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>{(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sortedConfigs.length)} of {sortedConfigs.length}</span>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(1)} disabled={safePage === 1}>
+                      «
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
+                      ‹
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
+                      ›
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage(totalPages)} disabled={safePage === totalPages}>
+                      »
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </Card>
       </div>

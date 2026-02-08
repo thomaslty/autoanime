@@ -1,11 +1,12 @@
 const rssConfigService = require('../services/rssConfigService');
+const { logger } = require('../utils/logger');
 
 const getConfigs = async (req, res) => {
   try {
     const configs = await rssConfigService.getAllConfigs();
     res.json(configs);
   } catch (error) {
-    console.error('Error fetching RSS configs:', error);
+    logger.error({ error }, 'Error fetching RSS configs');
     res.status(500).json({ error: 'Failed to fetch RSS configs' });
   }
 };
@@ -18,7 +19,7 @@ const getConfigById = async (req, res) => {
     if (!config) return res.status(404).json({ error: 'RSS config not found' });
     res.json(config);
   } catch (error) {
-    console.error('Error fetching RSS config:', error);
+    logger.error({ error }, 'Error fetching RSS config');
     res.status(500).json({ error: 'Failed to fetch RSS config' });
   }
 };
@@ -35,7 +36,7 @@ const createConfig = async (req, res) => {
     const config = await rssConfigService.createConfig({ name, description, regex, rssSourceId, isEnabled });
     res.status(201).json(config);
   } catch (error) {
-    console.error('Error creating RSS config:', error);
+    logger.error({ error }, 'Error creating RSS config');
     res.status(500).json({ error: 'Failed to create RSS config' });
   }
 };
@@ -54,7 +55,7 @@ const updateConfig = async (req, res) => {
     if (!config) return res.status(404).json({ error: 'RSS config not found' });
     res.json(config);
   } catch (error) {
-    console.error('Error updating RSS config:', error);
+    logger.error({ error }, 'Error updating RSS config');
     res.status(500).json({ error: 'Failed to update RSS config' });
   }
 };
@@ -66,7 +67,7 @@ const deleteConfig = async (req, res) => {
     await rssConfigService.deleteConfig(id);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting RSS config:', error);
+    logger.error({ error }, 'Error deleting RSS config');
     res.status(500).json({ error: 'Failed to delete RSS config' });
   }
 };
@@ -81,7 +82,7 @@ const previewConfig = async (req, res) => {
     if (!result.success) return res.status(400).json({ error: result.message });
     res.json(result);
   } catch (error) {
-    console.error('Error previewing RSS config:', error);
+    logger.error({ error }, 'Error previewing RSS config');
     res.status(500).json({ error: 'Failed to preview RSS config' });
   }
 };
@@ -95,7 +96,7 @@ const assignToSeries = async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Series not found' });
     res.json(result);
   } catch (error) {
-    console.error('Error assigning RSS config to series:', error);
+    logger.error({ error }, 'Error assigning RSS config to series');
     res.status(500).json({ error: 'Failed to assign RSS config' });
   }
 };
@@ -110,7 +111,7 @@ const assignToSeason = async (req, res) => {
     if (!result) return res.status(404).json({ error: 'Season not found' });
     res.json(result);
   } catch (error) {
-    console.error('Error assigning RSS config to season:', error);
+    logger.error({ error }, 'Error assigning RSS config to season');
     res.status(500).json({ error: 'Failed to assign RSS config' });
   }
 };

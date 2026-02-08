@@ -10,6 +10,7 @@ const { startScheduler } = require('./services/rssSchedulerService');
 const { db } = require('./db/db');
 const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
 const { eq, and } = require('drizzle-orm');
+const { logger } = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,7 +45,7 @@ app.use((req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error({ error: err.stack }, 'Internal server error');
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -200,7 +201,7 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
 
     return upsertCount;
   } catch (error) {
-    console.error('Error syncing episodes:', error);
+    logger.error({ error }, 'Error syncing episodes');
     throw error;
   }
 };
@@ -257,7 +258,7 @@ const getSeriesData = (item, now) => {
 
 const syncOnStartup = async () => {
   try {
-    console.log('Syncing series from Sonarr on startup...');
+    logger.info('Syncing series from Sonarr on startup');
     const sonarrData = await sonarrService.getAllSeries();
     const now = new Date();
 
@@ -285,23 +286,23 @@ const syncOnStartup = async () => {
       // Sync episodes after seasons are synced (episodes reference seasons)
       await upsertEpisodes(seriesId, item.id, now);
     }
-    console.log(`Startup sync complete: ${sonarrData.length} series synced`);
+    logger.info({ seriesCount: sonarrData.length }, 'Startup sync complete');
   } catch (error) {
-    console.error('Startup sync failed:', error.message);
+    logger.error({ error: error.message }, 'Startup sync failed');
   }
 };
 
 const startServer = async () => {
   const dbConnected = await testConnection();
   if (!dbConnected) {
-    console.warn('Database connection failed, starting without DB sync');
+    logger.warn('Database connection failed, starting without DB sync');
   } else {
     await syncOnStartup();
     startScheduler();
   }
 
   app.listen(PORT, () => {
-    console.log(`AutoAnime backend running on port ${PORT}`);
+    logger.info({ port: PORT }, 'AutoAnime backend running');
   });
 };
 

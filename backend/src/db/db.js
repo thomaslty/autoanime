@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const { drizzle } = require('drizzle-orm/node-postgres');
 const schema = require('./schema');
+const { logger } = require('../utils/logger');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -12,11 +13,10 @@ const db = drizzle(pool, { schema });
 const testConnection = async () => {
   try {
     const client = await pool.connect();
-    //console.log('Database connected successfully');
     client.release();
     return true;
   } catch (error) {
-    console.error('Database connection error:', error.message);
+    logger.error({ error: error.message }, 'Database connection error');
     return false;
   }
 };
