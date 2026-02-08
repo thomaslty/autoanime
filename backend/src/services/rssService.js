@@ -169,6 +169,41 @@ const toggleRss = async (id) => {
   return await updateRss(id, { isEnabled: !feed.isEnabled });
 };
 
+const clearRssItems = async (id) => {
+  await db.delete(rssItem).where(eq(rssItem.rssId, id));
+  return { success: true };
+};
+
+const updateRssItem = async (feedId, itemId, data) => {
+  const now = new Date();
+  const updateData = { updatedAt: now };
+  if (data.title !== undefined) updateData.title = data.title;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.link !== undefined) updateData.link = data.link;
+  if (data.magnetLink !== undefined) updateData.magnetLink = data.magnetLink;
+
+  const result = await db.update(rssItem)
+    .set(updateData)
+    .where(eq(rssItem.id, itemId))
+    .returning();
+  return result[0];
+};
+
+const downloadRssItem = async (feedId, itemId) => {
+  const items = await db.select().from(rssItem).where(eq(rssItem.id, itemId)).limit(1);
+  if (items.length === 0) {
+    return { success: false, message: 'RSS item not found' };
+  }
+
+  const item = items[0];
+  if (!item.magnetLink) {
+    return { success: false, message: 'No magnet link available for this item' };
+  }
+
+  const qbittorrentService = require('./qbittorrentService');
+  return await qbittorrentService.addMagnet(item.magnetLink);
+};
+
 module.exports = {
   fetchFeed,
   saveRssItems,
@@ -182,5 +217,8 @@ module.exports = {
   createRss,
   updateRss,
   deleteRss,
-  toggleRss
+  toggleRss,
+  clearRssItems,
+  updateRssItem,
+  downloadRssItem
 };

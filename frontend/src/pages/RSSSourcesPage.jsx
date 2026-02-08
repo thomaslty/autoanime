@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search, Settings, AlertCircle, WifiOff } from "lucide-react"
+import { Plus, Edit2, Trash2, RefreshCw, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, X, Eye, MoreHorizontal, Trash } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "../lib/utils"
 
 export function RSSSourcesPage() {
@@ -24,6 +25,7 @@ export function RSSSourcesPage() {
   const [editingFeed, setEditingFeed] = useState(null)
   const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true })
   const [searchTerm, setSearchTerm] = useState("")
+  const [dismissedWarnings, setDismissedWarnings] = useState(new Set())
   const navigate = useNavigate()
 
   const fetchFeeds = async () => {
@@ -35,7 +37,11 @@ export function RSSSourcesPage() {
       setFeeds(data)
       setError(null)
     } catch (err) {
-      setError(err.message)
+      if (err instanceof TypeError && err.message.includes("fetch")) {
+        setError("Unable to connect to backend server. Please check if the backend is running on port 3000.")
+      } else {
+        setError(err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -71,23 +77,24 @@ export function RSSSourcesPage() {
     }
   }
 
-  const getServiceError = () => {
-    if (!health) return null
+  const getServiceWarnings = () => {
+    if (!health) return []
+    const warnings = []
     if (!health.sonarr?.connected) {
-      return {
+      warnings.push({
+        key: "sonarr",
         title: "Sonarr Not Configured",
         message: health.sonarr?.error || "Sonarr is not configured or unreachable. RSS feed management requires Sonarr to be properly configured.",
-        service: "Sonarr"
-      }
+      })
     }
     if (!health.qbittorrent?.connected) {
-      return {
+      warnings.push({
+        key: "qbittorrent",
         title: "qBittorrent Not Configured",
         message: health.qbittorrent?.error || "qBittorrent is not configured or unreachable. Some RSS features may be limited.",
-        service: "qBittorrent"
-      }
+      })
     }
-    return null
+    return warnings
   }
 
   const getTemplateName = (templateId) => {
@@ -151,38 +158,58 @@ export function RSSSourcesPage() {
     }
   }
 
+  const handleClearItems = async (id) => {
+    if (!confirm("Are you sure you want to clear all RSS items for this feed?")) return
+
+    try {
+      const response = await fetch(`/api/rss/${id}/items`, { method: "DELETE" })
+      if (!response.ok) throw new Error("Failed to clear RSS items")
+      fetchFeeds()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const filteredFeeds = feeds.filter(f =>
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     f.url.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const serviceError = getServiceError()
+  const activeWarnings = getServiceWarnings().filter(w => !dismissedWarnings.has(w.key))
 
   return (
     <Layout>
       <div className="p-6 space-y-6">
         <h2 className="text-2xl font-bold">RSS Feeds</h2>
 
-        {serviceError && (
-          <Alert variant="destructive">
+        {activeWarnings.map(warning => (
+          <Alert key={warning.key} variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle className="flex items-center gap-2">
               <WifiOff className="h-4 w-4" />
-              {serviceError.title}
+              {warning.title}
             </AlertTitle>
             <AlertDescription className="mt-2">
-              <p className="mb-4">{serviceError.message}</p>
+              <p className="mb-4">{warning.message}</p>
               <Button onClick={() => navigate("/settings")} variant="outline" size="sm">
                 <Settings className="h-4 w-4 mr-2" />
                 Configure Now
               </Button>
             </AlertDescription>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2 right-2 h-6 w-6"
+              onClick={() => setDismissedWarnings(prev => new Set([...prev, warning.key]))}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </Alert>
-        )}
+        ))}
 
-        {error && !serviceError && (
+        {error && (
           <div className="bg-destructive/20 border border-destructive/50 text-destructive px-4 py-2 rounded-lg">
-            Error: {error}
+            {error}
           </div>
         )}
 
@@ -223,19 +250,19 @@ export function RSSSourcesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  <TableHead className="pl-4">ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Template</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Fetch</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-right pr-4">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredFeeds.map((feed) => (
                   <TableRow key={feed.id}>
-                    <TableCell className="text-muted-foreground">#{feed.id}</TableCell>
+                    <TableCell className="text-muted-foreground pl-4">#{feed.id}</TableCell>
                     <TableCell>
                       <div className="font-medium">{feed.name}</div>
                       {feed.description && <div className="text-xs text-muted-foreground">{feed.description}</div>}
@@ -259,25 +286,48 @@ export function RSSSourcesPage() {
                         <Button variant="ghost" size="icon" onClick={() => handleFetch(feed.id)} title="Fetch">
                           <RefreshCw size={16} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleToggle(feed.id)} title={feed.isEnabled ? "Disable" : "Enable"}>
-                          {feed.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
+                        <Button variant="ghost" size="icon" onClick={() => navigate(`/rss/${feed.id}/items`)} title="View Items">
+                          <Eye size={16} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          setEditingFeed(feed)
-                          setFormData({
-                            name: feed.name,
-                            url: feed.url,
-                            description: feed.description || "",
-                            templateId: String(feed.templateId),
-                            isEnabled: feed.isEnabled
-                          })
-                          setShowModal(true)
-                        }} title="Edit">
-                          <Edit2 size={16} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(feed.id)} title="Delete" className="hover:text-destructive">
-                          <Trash2 size={16} />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" title="Manage">
+                              <MoreHorizontal size={16} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleToggle(feed.id)}>
+                              {feed.isEnabled ? <PowerOff size={14} className="mr-2" /> : <Power size={14} className="mr-2" />}
+                              {feed.isEnabled ? "Disable" : "Enable"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setEditingFeed(feed)
+                              setFormData({
+                                name: feed.name,
+                                url: feed.url,
+                                description: feed.description || "",
+                                templateId: String(feed.templateId),
+                                isEnabled: feed.isEnabled
+                              })
+                              setShowModal(true)
+                            }}>
+                              <Edit2 size={14} className="mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleClearItems(feed.id)}>
+                              <Trash size={14} className="mr-2" />
+                              Clear RSS Items
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(feed.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 size={14} className="mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>

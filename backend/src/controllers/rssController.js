@@ -106,6 +106,43 @@ const getRssItems = async (req, res) => {
   }
 };
 
+const clearRssItems = async (req, res) => {
+  try {
+    await rssService.clearRssItems(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing RSS items:', error);
+    res.status(500).json({ error: 'Failed to clear RSS items' });
+  }
+};
+
+const updateRssItem = async (req, res) => {
+  try {
+    const { title, description, link, magnetLink } = req.body;
+    const item = await rssService.updateRssItem(req.params.id, req.params.itemId, { title, description, link, magnetLink });
+    if (!item) {
+      return res.status(404).json({ error: 'RSS item not found' });
+    }
+    res.json(item);
+  } catch (error) {
+    console.error('Error updating RSS item:', error);
+    res.status(500).json({ error: 'Failed to update RSS item' });
+  }
+};
+
+const downloadRssItem = async (req, res) => {
+  try {
+    const result = await rssService.downloadRssItem(req.params.id, req.params.itemId);
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Error downloading RSS item:', error);
+    res.status(500).json({ error: 'Failed to download RSS item' });
+  }
+};
+
 const getTemplates = async (req, res) => {
   try {
     const templates = getAvailableTemplates();
@@ -126,5 +163,8 @@ module.exports = {
   fetchRss,
   fetchAllRss,
   getRssItems,
+  clearRssItems,
+  updateRssItem,
+  downloadRssItem,
   getTemplates
 };
