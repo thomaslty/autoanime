@@ -2,11 +2,16 @@ import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
-import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, CheckCircle2, Clock, XCircle } from "lucide-react"
+import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
 
 const AutoDownloadStatus = {
   DISABLED: 0,
@@ -42,6 +47,11 @@ export function SeriesDetailPage() {
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
   const [downloadStatus, setDownloadStatus] = useState(null)
+  const [showRssModal, setShowRssModal] = useState(false)
+  const [rssConfigs, setRssConfigs] = useState([])
+  const [seriesRssConfigId, setSeriesRssConfigId] = useState("")
+  const [seasonRssConfigs, setSeasonRssConfigs] = useState({})
+  const [savingRss, setSavingRss] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -181,6 +191,61 @@ export function SeriesDetailPage() {
     }
   }
 
+  const openRssModal = async () => {
+    try {
+      const configsRes = await fetch("/api/rss-config")
+      if (configsRes.ok) {
+        setRssConfigs(await configsRes.json())
+      }
+      // Initialize from current series data
+      setSeriesRssConfigId(series?.rssConfigId ? String(series.rssConfigId) : "none")
+      const seasonMap = {}
+      if (series?.seasons) {
+        for (const s of series.seasons) {
+          if (s.rssConfigId) seasonMap[s.seasonNumber] = String(s.rssConfigId)
+        }
+      }
+      setSeasonRssConfigs(seasonMap)
+      setShowRssModal(true)
+    } catch (err) {
+      console.error("Error loading RSS configs:", err)
+    }
+  }
+
+  const handleSaveRssConfig = async () => {
+    setSavingRss(true)
+    try {
+      // Save series-level config
+      await fetch(`/api/sonarr/series/${id}/rss-config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rssConfigId: seriesRssConfigId && seriesRssConfigId !== "none" ? parseInt(seriesRssConfigId) : null })
+      })
+
+      // Save per-season overrides
+      const monitoredSeasons = series?.seasons?.filter(s => s.monitored) || []
+      for (const season of monitoredSeasons) {
+        const configId = seasonRssConfigs[season.seasonNumber]
+        await fetch(`/api/sonarr/series/${id}/seasons/${season.seasonNumber}/rss-config`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rssConfigId: configId && configId !== "none" ? parseInt(configId) : null })
+        })
+      }
+
+      // Refresh series data
+      const response = await fetch(`/api/sonarr/series/${id}`)
+      if (response.ok) {
+        setSeries(await response.json())
+      }
+      setShowRssModal(false)
+    } catch (err) {
+      console.error("Error saving RSS config:", err)
+    } finally {
+      setSavingRss(false)
+    }
+  }
+
   const serviceError = getServiceError()
 
   if (loading) {
@@ -275,6 +340,12 @@ export function SeriesDetailPage() {
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h1 className="text-3xl font-bold mb-2">{series.title}</h1>
+                {series.rssConfigId && (
+                  <Badge variant="outline" className="gap-1">
+                    <Rss size={12} />
+                    RSS Configured
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 mr-4">
@@ -284,10 +355,24 @@ export function SeriesDetailPage() {
                     onCheckedChange={handleToggleSeriesAutoDownload}
                   />
                 </div>
-                <Button onClick={handleRefresh} variant="outline">
-                  <RefreshCw size={18} className="mr-2" />
-                  <span>Refresh</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      Actions
+                      <ChevronDown size={16} className="ml-2" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleRefresh}>
+                      <RefreshCw size={16} className="mr-2" />
+                      Refresh
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={openRssModal}>
+                      <Rss size={16} className="mr-2" />
+                      Configure RSS
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 
@@ -412,6 +497,74 @@ export function SeriesDetailPage() {
           </div>
         )}
       </div>
+
+      {/* RSS Config Modal */}
+      <Dialog open={showRssModal} onOpenChange={setShowRssModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rss size={18} />
+              Configure RSS Filter
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Series-level RSS Config</Label>
+              <Select value={seriesRssConfigId} onValueChange={setSeriesRssConfigId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No config (disabled)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No config</SelectItem>
+                  {rssConfigs.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Applied to all seasons unless overridden</p>
+            </div>
+
+            {series?.seasons?.filter(s => s.monitored).length > 0 && (
+              <div className="space-y-3">
+                <Label>Per-Season Overrides</Label>
+                {series.seasons
+                  .filter(s => s.monitored)
+                  .sort((a, b) => a.seasonNumber - b.seasonNumber)
+                  .map(season => (
+                    <div key={season.seasonNumber} className="flex items-center gap-3">
+                      <span className="text-sm w-24 shrink-0">
+                        {season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}
+                      </span>
+                      <Select
+                        value={seasonRssConfigs[season.seasonNumber] || "none"}
+                        onValueChange={(value) => setSeasonRssConfigs(prev => ({
+                          ...prev,
+                          [season.seasonNumber]: value
+                        }))}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Use series config" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Use series config</SelectItem>
+                          {rssConfigs.map(c => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
+            <Button onClick={handleSaveRssConfig} disabled={savingRss}>
+              {savingRss ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   )
 }

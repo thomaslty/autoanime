@@ -11,6 +11,57 @@ const settings = pgTable('settings', {
   index('idx_settings_key').on(table.key),
 ]);
 
+const rss = pgTable('rss', {
+  id: serial('id').primaryKey(),
+  name: varchar('name').notNull(),
+  description: text('description'),
+  url: varchar('url').notNull(),
+  templateId: integer('template_id').default(0),
+  isEnabled: boolean('is_enabled').default(true),
+  lastFetchedAt: timestamp('last_fetched_at'),
+  refreshInterval: varchar('refresh_interval').default('1h'),
+  refreshIntervalType: varchar('refresh_interval_type').default('human'),
+  nextFetchAt: timestamp('next_fetch_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_rss_name').on(table.name),
+  index('idx_rss_is_enabled').on(table.isEnabled),
+  index('idx_rss_template_id').on(table.templateId),
+]);
+
+const rssItem = pgTable('rss_item', {
+  id: serial('id').primaryKey(),
+  rssId: integer('rss_id').references(() => rss.id, { onDelete: 'cascade' }),
+  guid: varchar('guid').notNull(),
+  title: text('title'),
+  description: text('description'),
+  link: varchar('link'),
+  publishedDate: timestamp('published_date'),
+  magnetLink: text('magnet_link'),
+  author: varchar('author'),
+  category: varchar('category'),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+  index('idx_rss_item_rss_id').on(table.rssId),
+  index('idx_rss_item_guid').on(table.guid),
+  index('idx_rss_item_published').on(table.publishedDate),
+]);
+
+const rssConfig = pgTable('rss_config', {
+  id: serial('id').primaryKey(),
+  name: varchar('name').notNull(),
+  description: text('description'),
+  regex: text('regex').notNull(),
+  rssSourceId: integer('rss_source_id').references(() => rss.id, { onDelete: 'set null' }),
+  isEnabled: boolean('is_enabled').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_rss_config_name').on(table.name),
+  index('idx_rss_config_rss_source').on(table.rssSourceId),
+]);
+
 const series = pgTable('series', {
   id: serial('id').primaryKey(),
   sonarrId: integer('sonarr_id').notNull().unique(),
@@ -54,6 +105,7 @@ const series = pgTable('series', {
   monitored: boolean('monitored').default(true),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
   downloadStatus: integer('download_status').default(0),
+  rssConfigId: integer('rss_config_id').references(() => rssConfig.id, { onDelete: 'set null' }),
   lastSyncedAt: timestamp('last_synced_at').defaultNow(),
   rawData: jsonb('raw_data'),
   createdAt: timestamp('created_at').defaultNow(),
@@ -65,43 +117,6 @@ const series = pgTable('series', {
   index('idx_series_imdb').on(table.imdbId),
   index('idx_series_tmdb').on(table.tmdbId),
   index('idx_series_tvdb').on(table.tvdbId),
-]);
-
-const rss = pgTable('rss', {
-  id: serial('id').primaryKey(),
-  name: varchar('name').notNull(),
-  description: text('description'),
-  url: varchar('url').notNull(),
-  templateId: integer('template_id').default(0),
-  isEnabled: boolean('is_enabled').default(true),
-  lastFetchedAt: timestamp('last_fetched_at'),
-  refreshInterval: varchar('refresh_interval').default('1h'),
-  refreshIntervalType: varchar('refresh_interval_type').default('human'),
-  nextFetchAt: timestamp('next_fetch_at'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_rss_name').on(table.name),
-  index('idx_rss_is_enabled').on(table.isEnabled),
-  index('idx_rss_template_id').on(table.templateId),
-]);
-
-const rssItem = pgTable('rss_item', {
-  id: serial('id').primaryKey(),
-  rssId: integer('rss_id').references(() => rss.id, { onDelete: 'cascade' }),
-  guid: varchar('guid').notNull(),
-  title: text('title'),
-  description: text('description'),
-  link: varchar('link'),
-  publishedDate: timestamp('published_date'),
-  magnetLink: text('magnet_link'),
-  author: varchar('author'),
-  category: varchar('category'),
-  createdAt: timestamp('created_at').defaultNow(),
-}, (table) => [
-  index('idx_rss_item_rss_id').on(table.rssId),
-  index('idx_rss_item_guid').on(table.guid),
-  index('idx_rss_item_published').on(table.publishedDate),
 ]);
 
 const qbittorrentDownloads = pgTable('qbittorrent_downloads', {
@@ -163,6 +178,7 @@ const seriesSeasons = pgTable('series_seasons', {
   previousAiring: timestamp('previous_airing'),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
   autoDownloadStatus: integer('auto_download_status').default(0),
+  rssConfigId: integer('rss_config_id').references(() => rssConfig.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
@@ -204,6 +220,7 @@ module.exports = {
   series,
   rss,
   rssItem,
+  rssConfig,
   qbittorrentDownloads,
   settings,
   seriesImages,

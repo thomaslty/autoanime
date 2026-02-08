@@ -106,7 +106,8 @@ const fetchAndParseRss = async (rssId) => {
   return {
     success: true,
     message: `Found ${items.length} items, ${newItems.length} new`,
-    newItems: newItems.length
+    newItems: newItems.length,
+    newItemsList: newItems
   };
 };
 

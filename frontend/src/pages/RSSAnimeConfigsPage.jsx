@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
-import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff } from "lucide-react"
+import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -13,34 +13,35 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
+const EMPTY_FORM = { name: "", description: "", regex: "", rssSourceId: "", isEnabled: true }
+
 export function RSSAnimeConfigsPage() {
   const [configs, setConfigs] = useState([])
-  const [series, setSeries] = useState([])
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [editingConfig, setEditingConfig] = useState(null)
-  const [formData, setFormData] = useState({ name: "", url: "", rssSourceId: "", sonarrSeriesId: "", isEnabled: true })
+  const [formData, setFormData] = useState(EMPTY_FORM)
+  const [regexError, setRegexError] = useState(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [preview, setPreview] = useState(null)
+  const [previewing, setPreviewing] = useState(false)
   const navigate = useNavigate()
 
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [configsRes, seriesRes, sourcesRes] = await Promise.all([
-        fetch("/api/rss/anime-configs"),
-        fetch("/api/sonarr/series"),
+      const [configsRes, sourcesRes] = await Promise.all([
+        fetch("/api/rss-config"),
         fetch("/api/rss/sources")
       ])
 
       if (!configsRes.ok) throw new Error("Failed to fetch configs")
-      if (!seriesRes.ok) throw new Error("Failed to fetch series")
       if (!sourcesRes.ok) throw new Error("Failed to fetch sources")
 
       setConfigs(await configsRes.json())
-      setSeries(await seriesRes.json())
       setSources(await sourcesRes.json())
       setError(null)
     } catch (err) {
@@ -72,25 +73,66 @@ export function RSSAnimeConfigsPage() {
     if (!health.sonarr?.connected) {
       return {
         title: "Sonarr Not Configured",
-        message: health.sonarr?.error || "Sonarr is not configured or unreachable. Anime RSS configs require Sonarr to be properly configured.",
+        message: health.sonarr?.error || "Sonarr is not configured or unreachable.",
         service: "Sonarr"
-      }
-    }
-    if (!health.qbittorrent?.connected) {
-      return {
-        title: "qBittorrent Not Configured",
-        message: health.qbittorrent?.error || "qBittorrent is not configured or unreachable. Some RSS features may be limited.",
-        service: "qBittorrent"
       }
     }
     return null
   }
 
+  const validateRegex = (pattern) => {
+    try {
+      new RegExp(pattern)
+      setRegexError(null)
+      return true
+    } catch (e) {
+      setRegexError(e.message)
+      return false
+    }
+  }
+
+  const handleRegexChange = (value) => {
+    setFormData({ ...formData, regex: value })
+    if (value) validateRegex(value)
+    else setRegexError(null)
+    setPreview(null)
+  }
+
+  const handlePreview = async () => {
+    if (!formData.rssSourceId || !formData.regex) return
+    if (!validateRegex(formData.regex)) return
+    setPreviewing(true)
+    try {
+      const response = await fetch("/api/rss-config/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rssSourceId: parseInt(formData.rssSourceId),
+          regex: formData.regex
+        })
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        setRegexError(data.error)
+      } else {
+        const data = await response.json()
+        setPreview(data)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   const handleSave = async () => {
+    if (!formData.name || !formData.regex) return
+    if (!validateRegex(formData.regex)) return
+
     try {
       const url = editingConfig
-        ? `/api/rss/anime-configs/${editingConfig.id}`
-        : "/api/rss/anime-configs"
+        ? `/api/rss-config/${editingConfig.id}`
+        : "/api/rss-config"
       const method = editingConfig ? "PUT" : "POST"
 
       const response = await fetch(url, {
@@ -99,15 +141,19 @@ export function RSSAnimeConfigsPage() {
         body: JSON.stringify({
           ...formData,
           rssSourceId: formData.rssSourceId ? parseInt(formData.rssSourceId) : null,
-          sonarrSeriesId: formData.sonarrSeriesId ? parseInt(formData.sonarrSeriesId) : null
         })
       })
 
-      if (!response.ok) throw new Error("Failed to save config")
+      if (!response.ok) {
+        const data = await response.json()
+        setError(data.error || "Failed to save config")
+        return
+      }
 
       setShowModal(false)
       setEditingConfig(null)
-      setFormData({ name: "", url: "", rssSourceId: "", sonarrSeriesId: "", isEnabled: true })
+      setFormData(EMPTY_FORM)
+      setPreview(null)
       fetchData()
     } catch (err) {
       setError(err.message)
@@ -116,9 +162,8 @@ export function RSSAnimeConfigsPage() {
 
   const handleDelete = async (id) => {
     if (!confirm("Are you sure you want to delete this config?")) return
-
     try {
-      const response = await fetch(`/api/rss/anime-configs/${id}`, { method: "DELETE" })
+      const response = await fetch(`/api/rss-config/${id}`, { method: "DELETE" })
       if (!response.ok) throw new Error("Failed to delete config")
       fetchData()
     } catch (err) {
@@ -126,19 +171,18 @@ export function RSSAnimeConfigsPage() {
     }
   }
 
-  const handleToggle = async (id) => {
+  const handleToggle = async (config) => {
     try {
-      const response = await fetch(`/api/rss/anime-configs/${id}/toggle`, { method: "POST" })
+      const response = await fetch(`/api/rss-config/${config.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isEnabled: !config.isEnabled })
+      })
       if (!response.ok) throw new Error("Failed to toggle config")
       fetchData()
     } catch (err) {
       setError(err.message)
     }
-  }
-
-  const getSeriesTitle = (id) => {
-    const s = series.find(s => s.id === id)
-    return s ? s.title : "-"
   }
 
   const getSourceName = (id) => {
@@ -148,7 +192,7 @@ export function RSSAnimeConfigsPage() {
 
   const filteredConfigs = configs.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getSeriesTitle(c.sonarrSeriesId).toLowerCase().includes(searchTerm.toLowerCase())
+    (c.description || "").toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const serviceError = getServiceError()
@@ -156,7 +200,7 @@ export function RSSAnimeConfigsPage() {
   return (
     <Layout>
       <div className="p-6 space-y-6">
-        <h2 className="text-2xl font-bold">Anime RSS Configs</h2>
+        <h2 className="text-2xl font-bold">RSS Configs</h2>
 
         {serviceError && (
           <Alert variant="destructive">
@@ -195,7 +239,9 @@ export function RSSAnimeConfigsPage() {
               </div>
               <Button onClick={() => {
                 setEditingConfig(null)
-                setFormData({ name: "", url: "", rssSourceId: "", sonarrSeriesId: "", isEnabled: true })
+                setFormData(EMPTY_FORM)
+                setPreview(null)
+                setRegexError(null)
                 setShowModal(true)
               }}>
                 <Plus size={18} className="mr-2" />
@@ -212,7 +258,7 @@ export function RSSAnimeConfigsPage() {
             </div>
           ) : filteredConfigs.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
-              {searchTerm ? "No configs found" : "No anime RSS configs configured"}
+              {searchTerm ? "No configs found" : "No RSS configs configured"}
             </div>
           ) : (
             <Table>
@@ -220,9 +266,8 @@ export function RSSAnimeConfigsPage() {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Linked Anime</TableHead>
+                  <TableHead>Regex</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead>URL</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -231,10 +276,12 @@ export function RSSAnimeConfigsPage() {
                 {filteredConfigs.map((config) => (
                   <TableRow key={config.id}>
                     <TableCell className="text-muted-foreground">#{config.id}</TableCell>
-                    <TableCell>{config.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{getSeriesTitle(config.sonarrSeriesId)}</TableCell>
+                    <TableCell>
+                      <div>{config.name}</div>
+                      {config.description && <div className="text-xs text-muted-foreground">{config.description}</div>}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{config.regex}</TableCell>
                     <TableCell className="text-muted-foreground">{getSourceName(config.rssSourceId)}</TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">{config.url}</TableCell>
                     <TableCell>
                       <Badge variant={config.isEnabled ? "default" : "secondary"}>
                         {config.isEnabled ? "Enabled" : "Disabled"}
@@ -242,18 +289,20 @@ export function RSSAnimeConfigsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleToggle(config.id)} title={config.isEnabled ? "Disable" : "Enable"}>
+                        <Button variant="ghost" size="icon" onClick={() => handleToggle(config)} title={config.isEnabled ? "Disable" : "Enable"}>
                           {config.isEnabled ? <PowerOff size={16} /> : <Power size={16} />}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => {
                           setEditingConfig(config)
                           setFormData({
                             name: config.name,
-                            url: config.url,
-                            rssSourceId: config.rssSourceId || "",
-                            sonarrSeriesId: config.sonarrSeriesId || "",
+                            description: config.description || "",
+                            regex: config.regex,
+                            rssSourceId: config.rssSourceId ? String(config.rssSourceId) : "",
                             isEnabled: config.isEnabled
                           })
+                          setPreview(null)
+                          setRegexError(null)
                           setShowModal(true)
                         }} title="Edit">
                           <Edit2 size={16} />
@@ -271,10 +320,18 @@ export function RSSAnimeConfigsPage() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent>
+      <Dialog open={showModal} onOpenChange={(open) => {
+        setShowModal(open)
+        if (!open) {
+          setEditingConfig(null)
+          setFormData(EMPTY_FORM)
+          setPreview(null)
+          setRegexError(null)
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingConfig ? "Edit Anime RSS Config" : "Add Anime RSS Config"}</DialogTitle>
+            <DialogTitle>{editingConfig ? "Edit RSS Config" : "Add RSS Config"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -283,45 +340,77 @@ export function RSSAnimeConfigsPage() {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Config name"
+                placeholder="e.g. Blue Lock Season 2"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="url">URL</Label>
+              <Label htmlFor="description">Description (optional)</Label>
               <Input
-                id="url"
-                type="url"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://example.com/feed"
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Optional description"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="sonarr">Linked Anime (optional)</Label>
-              <Select value={formData.sonarrSeriesId} onValueChange={(value) => setFormData({ ...formData, sonarrSeriesId: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select anime..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {series.map(s => (
-                    <SelectItem key={s.id} value={String(s.id)}>{s.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="regex">Regex Pattern</Label>
+              <Input
+                id="regex"
+                value={formData.regex}
+                onChange={(e) => handleRegexChange(e.target.value)}
+                placeholder="e.g. Blue.?Lock.*S2|1080p"
+                className={regexError ? "border-destructive" : ""}
+              />
+              {regexError && <p className="text-xs text-destructive">{regexError}</p>}
+              <p className="text-xs text-muted-foreground">Case-insensitive regex to match RSS item titles</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="source">RSS Source (optional)</Label>
-              <Select value={formData.rssSourceId} onValueChange={(value) => setFormData({ ...formData, rssSourceId: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select source..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {sources.map(s => (
-                    <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={formData.rssSourceId} onValueChange={(value) => {
+                  setFormData({ ...formData, rssSourceId: value })
+                  setPreview(null)
+                }}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select source..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sources.map(s => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={!formData.rssSourceId || !formData.regex || !!regexError || previewing}
+                >
+                  <Eye size={16} className="mr-2" />
+                  {previewing ? "Loading..." : "Preview"}
+                </Button>
+              </div>
             </div>
+
+            {preview && (
+              <div className="space-y-2">
+                <Label>Preview Results</Label>
+                <div className="text-sm text-muted-foreground mb-1">
+                  {preview.matched.length} of {preview.total} items matched
+                </div>
+                <div className="max-h-48 overflow-y-auto border rounded-md">
+                  {preview.matched.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No items matched</div>
+                  ) : (
+                    <div className="divide-y">
+                      {preview.matched.map(item => (
+                        <div key={item.id} className="px-3 py-2 text-xs">{item.title}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <Checkbox
                 id="isEnabled"
@@ -335,11 +424,13 @@ export function RSSAnimeConfigsPage() {
             <Button variant="outline" onClick={() => {
               setShowModal(false)
               setEditingConfig(null)
-              setFormData({ name: "", url: "", rssSourceId: "", sonarrSeriesId: "", isEnabled: true })
+              setFormData(EMPTY_FORM)
+              setPreview(null)
+              setRegexError(null)
             }}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={!formData.name || !formData.url}>
+            <Button onClick={handleSave} disabled={!formData.name || !formData.regex || !!regexError}>
               Save
             </Button>
           </DialogFooter>

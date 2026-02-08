@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 
 const rssRoutes = require('./rss');
+const rssConfigRoutes = require('./rssConfig');
 const sonarrRoutes = require('./sonarr');
 const qbittorrentRoutes = require('./qbittorrent');
 const settingsRoutes = require('./settings');
 
 router.use('/rss', rssRoutes);
+router.use('/rss-config', rssConfigRoutes);
 router.use('/sonarr', sonarrRoutes);
 router.use('/qbittorrent', qbittorrentRoutes);
 router.use('/settings', settingsRoutes);
