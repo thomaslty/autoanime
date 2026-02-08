@@ -55,9 +55,11 @@ export function SeriesDetailPage() {
   const [seriesRssConfigId, setSeriesRssConfigId] = useState("")
   const [seasonRssConfigs, setSeasonRssConfigs] = useState({})
   const [savingRss, setSavingRss] = useState(false)
+  const [resettingRss, setResettingRss] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [previewData, setPreviewData] = useState([])
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [applyingMatches, setApplyingMatches] = useState(false)
   const [previewSearch, setPreviewSearch] = useState("")
   const [previewSort, setPreviewSort] = useState({ field: 'seasonNumber', dir: 'desc' })
   const navigate = useNavigate()
@@ -254,9 +256,26 @@ export function SeriesDetailPage() {
     }
   }
 
-  const openPreviewModal = async () => {
+  const handleResetRssMatches = async () => {
+    if (!confirm("Are you sure you want to reset all RSS matches? This will clear the link between episodes and RSS items.")) return
+
+    setResettingRss(true)
+    try {
+      const response = await fetch(`/api/sonarr/series/${id}/rss-matches/reset`, { method: "POST" })
+      if (!response.ok) {
+        throw new Error("Failed to reset RSS matches")
+      }
+      // Refresh series data to reflect changes if any (though primarily affects episodes table)
+      handleRefresh()
+    } catch (err) {
+      console.error("Error resetting RSS matches:", err)
+    } finally {
+      setResettingRss(false)
+    }
+  }
+
+  const fetchPreviewData = async () => {
     setPreviewLoading(true)
-    setShowPreviewModal(true)
     try {
       const response = await fetch(`/api/rss-config/preview/series/${id}`)
       if (response.ok) {
@@ -273,6 +292,38 @@ export function SeriesDetailPage() {
       setPreviewLoading(false)
     }
   }
+
+  const handleApplyMatches = async () => {
+    if (!confirm("Are you sure you want to apply these RSS matches to the episodes? This will update the database.")) return
+
+    setApplyingMatches(true)
+    try {
+      const response = await fetch(`/api/rss-config/preview/series/${id}/apply`, { method: "POST" })
+      if (!response.ok) {
+        throw new Error("Failed to apply matches")
+      }
+      const data = await response.json()
+      // Refresh preview to show updated status
+      fetchPreviewData()
+      // Also refresh series data to keep everything in sync
+      handleRefresh()
+      // Optional: Show success message or toast
+    } catch (err) {
+      console.error("Error applying matches:", err)
+    } finally {
+      setApplyingMatches(false)
+    }
+  }
+
+  const openPreviewModal = () => {
+    setShowPreviewModal(true)
+  }
+
+  useEffect(() => {
+    if (showPreviewModal) {
+      fetchPreviewData()
+    }
+  }, [showPreviewModal])
 
   const serviceError = getServiceError()
 
@@ -590,10 +641,17 @@ export function SeriesDetailPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
-            <Button onClick={handleSaveRssConfig} disabled={savingRss}>
-              {savingRss ? "Saving..." : "Save"}
-            </Button>
+            <div className="flex w-full justify-between items-center">
+              <Button variant="destructive" size="sm" onClick={handleResetRssMatches} disabled={resettingRss}>
+                {resettingRss ? "Resetting..." : "Reset Matches"}
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
+                <Button onClick={handleSaveRssConfig} disabled={savingRss}>
+                  {savingRss ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -602,9 +660,15 @@ export function SeriesDetailPage() {
       <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
         <DialogContent className="sm:max-w-[70vw] max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye size={18} />
-              RSS Preview - Episode Matches
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye size={18} />
+                RSS Preview - Episode Matches
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchPreviewData} disabled={previewLoading}>
+                <RefreshCw size={14} className={`mr-2 ${previewLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden flex flex-col py-4">
@@ -641,8 +705,9 @@ export function SeriesDetailPage() {
                         Episode {previewSort.field === 'episodeNumber' && (previewSort.dir === 'asc' ? '↑' : '↓')}
                       </TableHead>
                       <TableHead>Episode Title</TableHead>
-                      <TableHead>RSS Item Title</TableHead>
-                      <TableHead>RSS Link</TableHead>
+                      <TableHead>Current RSS</TableHead>
+                      <TableHead>Preview Match</TableHead>
+                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -669,11 +734,27 @@ export function SeriesDetailPage() {
                           <TableCell>E{item.episodeNumber}</TableCell>
                           <TableCell className="max-w-md truncate">{item.episodeTitle || "-"}</TableCell>
                           <TableCell className="max-w-md truncate">
+                            {item.currentRssItemTitle ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-help text-blue-600 truncate block">{item.currentRssItemTitle}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="max-w-xs">{item.currentRssItemTitle}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <span className="text-muted-foreground italic text-xs">None</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-md truncate">
                             {item.rssItemTitle ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className="cursor-help text-green-600">{item.rssItemTitle}</span>
+                                    <span className="cursor-help text-green-600 truncate block">{item.rssItemTitle}</span>
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     <p className="max-w-xs">{item.rssItemTitle}</p>
@@ -681,21 +762,18 @@ export function SeriesDetailPage() {
                                 </Tooltip>
                               </TooltipProvider>
                             ) : (
-                              <span className="text-muted-foreground italic">No match</span>
+                              <span className="text-muted-foreground italic text-xs">No match</span>
                             )}
                           </TableCell>
                           <TableCell>
-                            {item.rssItemLink ? (
-                              <a
-                                href={item.rssItemLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-500 hover:underline text-sm"
-                              >
-                                Open
-                              </a>
+                            {item.rssItemTitle && item.rssItemTitle !== item.currentRssItemTitle ? (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">New Match</Badge>
+                            ) : item.currentRssItemTitle && !item.rssItemTitle ? (
+                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Will Unlink</Badge>
+                            ) : item.rssItemTitle ? (
+                              <Badge variant="outline" className="text-muted-foreground">Unchanged</Badge>
                             ) : (
-                              "-"
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
                         </TableRow>
@@ -705,8 +783,16 @@ export function SeriesDetailPage() {
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
+          <DialogFooter className="flex justify-between items-center sm:justify-between w-full">
+            <div className="text-sm text-muted-foreground">
+              {previewData.filter(i => i.rssItemTitle && i.rssItemTitle !== i.currentRssItemTitle).length} new matches found
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
+              <Button onClick={handleApplyMatches} disabled={applyingMatches || previewLoading || previewData.length === 0}>
+                {applyingMatches ? "Applying..." : "Apply Matches"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

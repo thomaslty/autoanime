@@ -14,6 +14,7 @@ router.post('/series/:id/refresh', sonarrController.triggerRefresh);
 router.patch('/series/:id/auto-download', sonarrController.toggleSeriesAutoDownload);
 router.patch('/series/:seriesId/seasons/:seasonNumber/auto-download', sonarrController.toggleSeasonAutoDownload);
 router.patch('/series/:seriesId/episodes/:episodeId/auto-download', sonarrController.toggleEpisodeAutoDownload);
+router.post('/series/:id/rss-matches/reset', sonarrController.resetRssMatches);
 router.put('/series/:id/rss-config', rssConfigController.assignToSeries);
 router.put('/series/:id/seasons/:seasonNumber/rss-config', rssConfigController.assignToSeason);
 

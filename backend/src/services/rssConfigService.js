@@ -1,6 +1,6 @@
 const { db } = require('../db/db');
 const { rssConfig, rss, rssItem, series, seriesSeasons, seriesEpisodes } = require('../db/schema');
-const { eq, and, asc } = require('drizzle-orm');
+const { eq, and, asc, gt } = require('drizzle-orm');
 
 const getAllConfigs = async () => {
   return await db.select().from(rssConfig).orderBy(rssConfig.name);
@@ -97,15 +97,21 @@ const getSeriesRssPreview = async (seriesId) => {
     return { success: false, message: 'Series not found' };
   }
 
-  // Get all episodes for the series
+  // Get all episodes for the series with current RSS link
   const episodes = await db.select({
     id: seriesEpisodes.id,
     seasonNumber: seriesEpisodes.seasonNumber,
     episodeNumber: seriesEpisodes.episodeNumber,
     title: seriesEpisodes.title,
+    currentRssItemId: seriesEpisodes.rssItemId,
+    currentRssItemTitle: rssItem.title,
   })
     .from(seriesEpisodes)
-    .where(eq(seriesEpisodes.seriesId, seriesId))
+    .leftJoin(rssItem, eq(seriesEpisodes.rssItemId, rssItem.id))
+    .where(and(
+      eq(seriesEpisodes.seriesId, seriesId),
+      gt(seriesEpisodes.seasonNumber, 0)
+    ))
     .orderBy(asc(seriesEpisodes.seasonNumber), asc(seriesEpisodes.episodeNumber));
 
   // Get season-level RSS configs
@@ -214,6 +220,8 @@ const getSeriesRssPreview = async (seriesId) => {
       seasonNumber: episode.seasonNumber,
       episodeNumber: episode.episodeNumber,
       episodeTitle: episode.title,
+      currentRssItemId: episode.currentRssItemId,
+      currentRssItemTitle: episode.currentRssItemTitle,
       rssItemId: matchedItem?.id || null,
       rssItemTitle: matchedItem?.title || null,
       rssItemLink: matchedItem?.link || null,
@@ -221,6 +229,43 @@ const getSeriesRssPreview = async (seriesId) => {
   });
 
   return { success: true, data: previewData };
+};
+
+const applySeriesRssPreview = async (seriesId) => {
+  const previewResult = await getSeriesRssPreview(seriesId);
+  if (!previewResult.success) {
+    return previewResult;
+  }
+
+  const updates = [];
+  const now = new Date();
+
+  for (const item of previewResult.data) {
+    // Only update if there's a change
+    if (item.rssItemId !== item.currentRssItemId) {
+      if (item.rssItemId) {
+        // Link new match
+        updates.push(
+          db.update(seriesEpisodes)
+            .set({ rssItemId: item.rssItemId, updatedAt: now })
+            .where(eq(seriesEpisodes.id, item.episodeId))
+        );
+      } else if (item.currentRssItemId) {
+        // Unlink if no longer matched but previously was
+        updates.push(
+          db.update(seriesEpisodes)
+            .set({ rssItemId: null, updatedAt: now })
+            .where(eq(seriesEpisodes.id, item.episodeId))
+        );
+      }
+    }
+  }
+
+  if (updates.length > 0) {
+    await Promise.all(updates);
+  }
+
+  return { success: true, updatedCount: updates.length };
 };
 
 module.exports = {
@@ -233,4 +278,5 @@ module.exports = {
   assignToSeries,
   assignToSeason,
   getSeriesRssPreview,
+  applySeriesRssPreview,
 };

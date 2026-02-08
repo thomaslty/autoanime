@@ -164,7 +164,7 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
 const getSeriesData = (item, now) => {
   const stats = item.statistics || {};
   const ratings = item.ratings || {};
-  
+
   return {
     sonarrId: item.id,
     title: item.title,
@@ -238,14 +238,14 @@ const getSeriesById = async (req, res) => {
     if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
-    
+
     const [images, alternateTitles, seasons, episodes] = await Promise.all([
       db.select().from(seriesImages).where(eq(seriesImages.seriesId, parseInt(id))),
       db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, parseInt(id))),
       db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, parseInt(id))),
       db.select().from(seriesEpisodes).where(eq(seriesEpisodes.seriesId, parseInt(id)))
     ]);
-    
+
     res.json({
       ...seriesResult[0],
       images,
@@ -473,6 +473,29 @@ const getSeriesAutoDownloadStatus = async (req, res) => {
   }
 };
 
+const resetRssMatches = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const seriesId = parseInt(id);
+
+    // Verify series exists
+    const seriesResult = await db.select().from(series).where(eq(series.id, seriesId));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    // Reset rss_item_id for all episodes of this series
+    await db.update(seriesEpisodes)
+      .set({ rssItemId: null })
+      .where(eq(seriesEpisodes.seriesId, seriesId));
+
+    res.json({ success: true, message: 'RSS matches reset successfully' });
+  } catch (error) {
+    console.error('Error resetting RSS matches:', error);
+    res.status(500).json({ error: 'Failed to reset RSS matches' });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
@@ -484,5 +507,6 @@ module.exports = {
   toggleSeriesAutoDownload,
   toggleSeasonAutoDownload,
   toggleEpisodeAutoDownload,
-  getSeriesAutoDownloadStatus
+  getSeriesAutoDownloadStatus,
+  resetRssMatches
 };

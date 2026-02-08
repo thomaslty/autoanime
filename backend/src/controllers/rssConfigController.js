@@ -129,6 +129,19 @@ const getSeriesRssPreview = async (req, res) => {
   }
 };
 
+const applySeriesRssPreview = async (req, res) => {
+  try {
+    const seriesId = parseInt(req.params.seriesId, 10);
+    if (isNaN(seriesId)) return res.status(404).json({ error: 'Series not found' });
+    const result = await rssConfigService.applySeriesRssPreview(seriesId);
+    if (!result.success) return res.status(400).json({ error: result.message });
+    res.json(result);
+  } catch (error) {
+    logger.error({ error }, 'Error applying series RSS preview');
+    res.status(500).json({ error: 'Failed to apply series RSS preview' });
+  }
+};
+
 module.exports = {
   getConfigs,
   getConfigById,
@@ -139,4 +152,5 @@ module.exports = {
   assignToSeries,
   assignToSeason,
   getSeriesRssPreview,
+  applySeriesRssPreview,
 };
