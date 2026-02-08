@@ -1,6 +1,6 @@
 const { db } = require('../db/db');
 const { rss, rssItem } = require('../db/schema');
-const { eq, sql, lte } = require('drizzle-orm');
+const { eq, sql, lte, and } = require('drizzle-orm');
 const { getParser } = require('../rss_parsers');
 const { CronExpressionParser } = require('cron-parser');
 
@@ -53,7 +53,10 @@ const saveRssItems = async (rssId, items) => {
   for (const item of items) {
     const existing = await db.select()
       .from(rssItem)
-      .where(eq(rssItem.guid, item.guid))
+      .where(and(
+        eq(rssItem.guid, item.guid),
+        eq(rssItem.rssId, rssId)
+      ))
       .limit(1);
 
     if (existing.length === 0) {

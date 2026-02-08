@@ -7,42 +7,29 @@ class DmhyParser extends BaseParser {
   }
 
   parse(xml) {
+    const parsed = this.parseXml(xml);
     const items = [];
-    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi;
-    let match;
 
-    while ((match = itemRegex.exec(xml)) !== null) {
-      const itemXml = match[1];
+    const channel = parsed?.rss?.channel;
+    if (!channel) return items;
 
-      const titleMatch = itemXml.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>(.*?)<\/title>/i);
-      const linkMatch = itemXml.match(/<link>(.*?)<\/link>/i);
-      const pubDateMatch = itemXml.match(/<pubDate>(.*?)<\/pubDate>/i);
-      const descriptionMatch = itemXml.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>(.*?)<\/description>/i);
-      const enclosureMatch = itemXml.match(/<enclosure[^>]*url="([^"]*)"[^>]*>/i) || itemXml.match(/<enclosure[^>]*url='([^"]*)'[^>]*>/i);
-      const authorMatch = itemXml.match(/<author><!\[CDATA\[([\s\S]*?)\]\]><\/author>|<author>(.*?)<\/author>/i);
-      const categoryMatch = itemXml.match(/<category[^>]*>(?:<!\[CDATA\[([\s\S]*?)\]\]>|(.*?))<\/category>/i);
-      const guidMatch = itemXml.match(/<guid[^>]*>(.*?)<\/guid>/i);
+    const rssItems = Array.isArray(channel.item) ? channel.item : [channel.item].filter(Boolean);
 
-      const title = titleMatch ? this.extractCDATA(titleMatch[1] || titleMatch[2] || '') : '';
-      const link = linkMatch ? linkMatch[1] : '';
-      const publishedDate = pubDateMatch ? this.parseDate(pubDateMatch[1]) : new Date();
-      const description = descriptionMatch ? this.extractCDATA(descriptionMatch[1] || descriptionMatch[2] || '') : '';
-      const magnetLink = enclosureMatch ? enclosureMatch[1] : '';
-      const author = authorMatch ? this.extractCDATA(authorMatch[1] || authorMatch[2] || '') : '';
-      const category = categoryMatch ? this.extractCDATA(categoryMatch[1] || categoryMatch[2] || '') : '';
-      const guidValue = guidMatch ? this.extractCDATA(guidMatch[1]) : link;
+    for (const item of rssItems) {
+      const title = this.extractText(item.title);
+      const link = this.extractText(item.link);
+      const publishedDate = this.parseDate(this.extractText(item.pubDate));
+      const description = this.extractText(item.description);
+      const magnetLink = item.enclosure?.['@_url'] || '';
+      const author = this.extractText(item.author);
+      const category = this.extractText(item.category);
+      const guidValue = this.extractText(item.guid) || link;
       const guid = this.hashGuid(guidValue);
 
       if (link || guid) {
         items.push({
-          guid,
-          title,
-          description,
-          link,
-          publishedDate,
-          magnetLink,
-          author,
-          category
+          guid, title, description, link,
+          publishedDate, magnetLink, author, category
         });
       }
     }

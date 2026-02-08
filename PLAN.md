@@ -164,6 +164,160 @@ SELECT rss_config_id FROM series_seasons WHERE series_id = 1;
 
 ---
 
+## RSS Parser Refactoring Plan
+
+### Issue
+The current RSS parsers use regex patterns to extract data from XML feeds. This approach is error-prone and has caused bugs:
+- **Bug**: First RSS item was skipped because regex didn't account for whitespace/newlines between XML tags and CDATA sections
+- **Root Cause**: Regex like `<title><![CDATA[...` failed when XML had `<title>\n<![CDATA[...`
+- **Limitation**: Regex-based XML parsing is fragile and hard to maintain
+
+### Solution
+Refactor all RSS parsers to use a proper XML parsing library (`fast-xml-parser`) instead of regex.
+
+### Implementation
+
+#### 1. Install XML Library
+```bash
+cd backend
+npm install fast-xml-parser
+```
+
+#### 2. Refactor Base Parser
+**File**: `backend/src/rss_parsers/baseParser.js`
+
+```javascript
+const { XMLParser } = require('fast-xml-parser');
+
+class BaseParser {
+  constructor() {
+    this.name = 'BaseParser';
+    this.parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: '@_',
+      textNodeName: '#text',
+      cdataPropName: '#cdata',
+      trimValues: true
+    });
+  }
+
+  parse(xml) {
+    throw new Error('parse() must be implemented by subclass');
+  }
+
+  parseXml(xml) {
+    return this.parser.parse(xml);
+  }
+
+  extractText(node) {
+    if (!node) return '';
+    if (typeof node === 'string') return node.trim();
+    if (node['#cdata']) return node['#cdata'].trim();
+    if (node['#text']) return node['#text'].trim();
+    return '';
+  }
+
+  // ... keep existing hashGuid and parseDate methods
+}
+```
+
+#### 3. Refactor DMHY Parser
+**File**: `backend/src/rss_parsers/dmhyParser.js`
+
+```javascript
+const { BaseParser } = require('./baseParser');
+
+class DmhyParser extends BaseParser {
+  constructor() {
+    super();
+    this.name = 'DmhyParser';
+  }
+
+  parse(xml) {
+    const parsed = this.parseXml(xml);
+    const items = [];
+    
+    const channel = parsed?.rss?.channel;
+    if (!channel) return items;
+    
+    const rssItems = Array.isArray(channel.item) ? channel.item : [channel.item].filter(Boolean);
+    
+    for (const item of rssItems) {
+      const title = this.extractText(item.title);
+      const link = this.extractText(item.link);
+      const publishedDate = this.parseDate(this.extractText(item.pubDate));
+      const description = this.extractText(item.description);
+      const magnetLink = item.enclosure?.['@_url'] || '';
+      const author = this.extractText(item.author);
+      const category = this.extractText(item.category);
+      const guidValue = this.extractText(item.guid) || link;
+      const guid = this.hashGuid(guidValue);
+
+      if (link || guid) {
+        items.push({
+          guid, title, description, link,
+          publishedDate, magnetLink, author, category
+        });
+      }
+    }
+    
+    return items;
+  }
+}
+```
+
+### Tasks
+
+#### Phase 1: Setup
+- [x] Install `fast-xml-parser` npm package
+- [x] Update `baseParser.js` to include XML parser instance
+- [x] Add helper method `parseXml()` and `extractText()` to base parser
+
+#### Phase 2: Parser Refactoring
+- [x] Refactor `dmhyParser.js` to use XML parser
+- [x] Remove regex patterns from DMHY parser
+- [x] Handle edge cases (missing fields, malformed XML)
+
+#### Phase 3: Testing
+- [x] Test with sample RSS feed from DMHY
+- [x] Verify all items are correctly parsed (including first item)
+- [x] Test error handling for malformed XML
+- [x] Verify existing RSS items continue to work
+
+### Benefits
+1. **Reliability**: Proper XML parsing handles whitespace, newlines, and encoding correctly
+2. **Maintainability**: Cleaner code without complex regex patterns
+3. **Robustness**: Library handles edge cases automatically
+4. **Performance**: `fast-xml-parser` is one of the fastest XML parsers for Node.js
+
+### Affected Files
+- `backend/src/rss_parsers/baseParser.js`
+- `backend/src/rss_parsers/dmhyParser.js`
+- `backend/package.json` (new dependency)
+
+---
+
+## RSS Item Saving Fix
+
+### Issue
+Items were not being saved to the database if an item with the same GUID already existed for *any* RSS feed, even a different one. This prevented multiple feeds from tracking the same underlying content or incorrectly skipped items.
+
+### Solution
+Updated the `saveRssItems` function in `backend/src/services/rssService.js` to check for uniqueness based on the pair `(guid, rssId)` instead of just `guid`.
+
+### Implementation
+```javascript
+const existing = await db.select()
+  .from(rssItem)
+  .where(and(
+    eq(rssItem.guid, item.guid),
+    eq(rssItem.rssId, rssId)
+  ))
+  .limit(1);
+```
+
+---
+
 ## Example Regex Patterns
 
 | Anime                | Pattern                                      |

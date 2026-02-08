@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.js",
     "db:migrate:raw": "drizzle-kit migrate",
@@ -25,13 +27,15 @@
   "dependencies": {
     "cors": "^2.8.6",
     "cron-parser": "^5.5.0",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.2.4",
     "drizzle-orm": "^0.45.1",
     "express": "^5.2.1",
+    "fast-xml-parser": "^5.3.5",
     "pg": "^8.18.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.8",
+    "jest": "^30.2.0",
     "nodemon": "^3.1.11"
   }
 }
