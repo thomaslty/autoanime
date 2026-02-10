@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770081632168,
-      "tag": "0000_lush_xavin",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770200000000,
-      "tag": "0001_legal_spiral",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1770573520655,
-      "tag": "0002_petite_slapstick",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1770575585226,
-      "tag": "0003_supreme_mad_thinker",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1770587777383,
-      "tag": "0004_yielding_whistler",
+      "when": 1770693106598,
+      "tag": "0000_secret_mandrill",
       "breakpoints": true
     }
   ]

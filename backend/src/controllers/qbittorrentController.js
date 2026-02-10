@@ -1,6 +1,6 @@
 const qbittorrentService = require('../services/qbittorrentService');
 const { db } = require('../db/db');
-const { qbittorrentDownloads } = require('../db/schema');
+const { downloads } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 
 const getStatus = async (req, res) => {
@@ -15,7 +15,7 @@ const getStatus = async (req, res) => {
 
 const getDownloads = async (req, res) => {
   try {
-    const downloads = await db.select().from(qbittorrentDownloads).orderBy(qbittorrentDownloads.createdAt);
+    const downloads = await db.select().from(downloads).orderBy(downloads.createdAt);
     res.json(downloads);
   } catch (error) {
     console.error('Error fetching downloads:', error);
@@ -40,12 +40,13 @@ const addMagnet = async (req, res) => {
 
     if (torrentHash) {
       const now = new Date();
-      await db.insert(qbittorrentDownloads).values({
+      await db.insert(downloads).values({
         torrentHash,
         magnetLink: magnet,
-        seriesId: seriesId || null,
+        seriesEpisodeId: null, // Can be set later if linked to an episode
+        rssItemId: null, // Can be set later if linked to RSS item
         category,
-        status: 'downloading',
+        status: 'DOWNLOADING',
         createdAt: now,
         updatedAt: now
       });
@@ -63,9 +64,9 @@ const pauseTorrent = async (req, res) => {
     const { hash } = req.params;
     const result = await qbittorrentService.pauseTorrent(hash);
     if (result.success) {
-      await db.update(qbittorrentDownloads)
+      await db.update(downloads)
         .set({ status: 'paused', updatedAt: new Date() })
-        .where(eq(qbittorrentDownloads.torrentHash, hash));
+        .where(eq(downloads.torrentHash, hash));
     }
     res.json(result);
   } catch (error) {
@@ -79,9 +80,9 @@ const resumeTorrent = async (req, res) => {
     const { hash } = req.params;
     const result = await qbittorrentService.resumeTorrent(hash);
     if (result.success) {
-      await db.update(qbittorrentDownloads)
+      await db.update(downloads)
         .set({ status: 'downloading', updatedAt: new Date() })
-        .where(eq(qbittorrentDownloads.torrentHash, hash));
+        .where(eq(downloads.torrentHash, hash));
     }
     res.json(result);
   } catch (error) {
@@ -96,7 +97,7 @@ const deleteTorrent = async (req, res) => {
     const { deleteFiles = false } = req.body;
     const result = await qbittorrentService.deleteTorrent(hash, deleteFiles);
     if (result.success) {
-      await db.delete(qbittorrentDownloads).where(eq(qbittorrentDownloads.torrentHash, hash));
+      await db.delete(downloads).where(eq(downloads.torrentHash, hash));
     }
     res.json(result);
   } catch (error) {
@@ -122,7 +123,7 @@ const syncDownloads = async (req, res) => {
 
     for (const torrent of torrents) {
       const hash = torrent.hash;
-      const existing = await db.select().from(qbittorrentDownloads).where(eq(qbittorrentDownloads.torrentHash, hash)).limit(1);
+      const existing = await db.select().from(downloads).where(eq(downloads.torrentHash, hash)).limit(1);
 
       let status = 'downloading';
       if (torrent.state === 'pausedUP' || torrent.state === 'pausedDL') status = 'paused';
@@ -130,7 +131,7 @@ const syncDownloads = async (req, res) => {
       if (torrent.state === 'error' || torrent.state === 'missingFiles') status = 'error';
 
       if (existing.length > 0) {
-        await db.update(qbittorrentDownloads)
+        await db.update(downloads)
           .set({
             name: torrent.name,
             status,
@@ -139,7 +140,7 @@ const syncDownloads = async (req, res) => {
             savePath: torrent.save_path,
             updatedAt: now
           })
-          .where(eq(qbittorrentDownloads.id, existing[0].id));
+          .where(eq(downloads.id, existing[0].id));
       }
     }
 

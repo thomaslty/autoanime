@@ -568,15 +568,28 @@ const downloadEpisode = async (req, res) => {
     const hashMatch = ep.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
     const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
 
+    const now = new Date();
+
+    // Update episode status
+    await db.update(seriesEpisodes)
+      .set({
+        downloadedAt: now,
+        autoDownloadStatus: AutoDownloadStatus.DOWNLOADING,
+        updatedAt: now
+      })
+      .where(eq(seriesEpisodes.id, ep.id));
+
     // Save download record
     if (torrentHash) {
-      const { qbittorrentDownloads } = require('../db/schema');
-      const now = new Date();
-      await db.insert(qbittorrentDownloads).values({
+      const { downloads } = require('../db/schema');
+      await db.insert(downloads).values({
         torrentHash,
         magnetLink: ep.magnetLink,
-        seriesId: ep.seriesId,
-        episodeId: ep.id,
+        seriesEpisodeId: ep.id,
+        rssItemId: ep.rssItemId,
+        category: 'autoanime',
+        status: 'DOWNLOADING',
+        name: ep.rssTitle,
         createdAt: now,
         updatedAt: now
       }).onConflictDoNothing();

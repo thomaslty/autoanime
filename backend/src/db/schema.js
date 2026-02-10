@@ -120,24 +120,25 @@ const series = pgTable('series', {
   index('idx_series_tvdb').on(table.tvdbId),
 ]);
 
-const qbittorrentDownloads = pgTable('qbittorrent_downloads', {
+const downloads = pgTable('downloads', {
   id: serial('id').primaryKey(),
   torrentHash: varchar('torrent_hash').unique(),
   magnetLink: text('magnet_link').notNull(),
-  seriesId: integer('series_id').references(() => series.id),
+  seriesEpisodeId: integer('series_episode_id').references(() => seriesEpisodes.id, { onDelete: 'set null' }),
+  rssItemId: integer('rss_item_id').references(() => rssItem.id, { onDelete: 'set null' }),
   category: varchar('category'),
-  status: varchar('status'),
+  status: varchar('status').default('PENDING'), // PENDING, DOWNLOADING, DOWNLOADED, FAILED, MOVED
   name: varchar('name'),
   size: bigint('size', { mode: 'number' }),
-  progress: numeric('progress', { precision: 5, scale: 2 }),
-  downloadPath: varchar('download_path'),
-  savePath: varchar('save_path'),
+  progress: numeric('progress', { precision: 5, scale: 2 }).default('0'),
+  filePath: varchar('file_path'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_qbittorrent_downloads_status').on(table.status),
-  index('idx_qbittorrent_downloads_hash').on(table.torrentHash),
-  index('idx_qbittorrent_downloads_series').on(table.seriesId),
+  index('idx_downloads_status').on(table.status),
+  index('idx_downloads_hash').on(table.torrentHash),
+  index('idx_downloads_episode').on(table.seriesEpisodeId),
+  index('idx_downloads_rss_item').on(table.rssItemId),
 ]);
 
 const seriesImages = pgTable('series_images', {
@@ -224,7 +225,8 @@ module.exports = {
   rss,
   rssItem,
   rssConfig,
-  qbittorrentDownloads,
+  downloads,
+  qbittorrentDownloads: downloads, // Alias for backward compatibility
   settings,
   seriesImages,
   seriesAlternateTitles,
