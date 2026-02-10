@@ -66,6 +66,7 @@ export function SeriesDetailPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [showApplyConfirm, setShowApplyConfirm] = useState(false)
   const [updatingEpisodeIds, setUpdatingEpisodeIds] = useState(new Set())
+  const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState(new Set())
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -358,6 +359,30 @@ export function SeriesDetailPage() {
       console.error("Error unlinking episode:", err)
     } finally {
       setUpdatingEpisodeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(episodeId)
+        return newSet
+      })
+    }
+  }
+
+  const handleDownloadEpisode = async (episodeId) => {
+    setDownloadingEpisodeIds(prev => new Set(prev).add(episodeId))
+    try {
+      const response = await fetch(`/api/sonarr/episodes/${episodeId}/download`, {
+        method: "POST"
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to download episode")
+      }
+      // Optional: Show success message
+      console.log("Download started successfully")
+    } catch (err) {
+      console.error("Error downloading episode:", err)
+      // Optional: Show error toast
+    } finally {
+      setDownloadingEpisodeIds(prev => {
         const newSet = new Set(prev)
         newSet.delete(episodeId)
         return newSet
@@ -821,31 +846,48 @@ export function SeriesDetailPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            {updatingEpisodeIds.has(item.episodeId) ? (
-                              <Button size="sm" variant="ghost" disabled>
-                                <RefreshCw size={14} className="animate-spin" />
-                              </Button>
-                            ) : item.rssItemId && item.rssItemId !== item.currentRssItemId ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleLinkEpisode(item.episodeId, item.rssItemId)}
-                                className="text-green-700 border-green-200 hover:bg-green-50"
-                              >
-                                Link
-                              </Button>
-                            ) : item.currentRssItemId ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleUnlinkEpisode(item.episodeId)}
-                                className="text-red-700 border-red-200 hover:bg-red-50"
-                              >
-                                Unlink
-                              </Button>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">-</span>
-                            )}
+                            <div className="flex gap-1 justify-end">
+                              {updatingEpisodeIds.has(item.episodeId) ? (
+                                <Button size="sm" variant="ghost" disabled>
+                                  <RefreshCw size={14} className="animate-spin" />
+                                </Button>
+                              ) : item.rssItemId && item.rssItemId !== item.currentRssItemId ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleLinkEpisode(item.episodeId, item.rssItemId)}
+                                  className="text-green-700 border-green-200 hover:bg-green-50"
+                                >
+                                  Link
+                                </Button>
+                              ) : item.currentRssItemId ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleDownloadEpisode(item.episodeId)}
+                                    disabled={downloadingEpisodeIds.has(item.episodeId)}
+                                    className="text-blue-700 border-blue-200 hover:bg-blue-50"
+                                  >
+                                    {downloadingEpisodeIds.has(item.episodeId) ? (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    ) : (
+                                      <Download size={14} />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleUnlinkEpisode(item.episodeId)}
+                                    className="text-red-700 border-red-200 hover:bg-red-50"
+                                  >
+                                    Unlink
+                                  </Button>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}

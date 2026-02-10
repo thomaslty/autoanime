@@ -1,6 +1,6 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
-const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('../db/schema');
+const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
 const AutoDownloadStatus = require('../enums/autoDownloadStatus');
 
@@ -525,6 +525,70 @@ const updateEpisodeRssItem = async (req, res) => {
   }
 };
 
+const downloadEpisode = async (req, res) => {
+  try {
+    const episodeId = parseInt(req.params.episodeId, 10);
+
+    if (isNaN(episodeId)) {
+      return res.status(400).json({ error: 'Invalid episode ID' });
+    }
+
+    // Get episode with its RSS item
+    const episode = await db.select({
+      id: seriesEpisodes.id,
+      seriesId: seriesEpisodes.seriesId,
+      rssItemId: seriesEpisodes.rssItemId,
+      magnetLink: rssItem.magnetLink,
+      rssTitle: rssItem.title
+    })
+      .from(seriesEpisodes)
+      .leftJoin(rssItem, eq(seriesEpisodes.rssItemId, rssItem.id))
+      .where(eq(seriesEpisodes.id, episodeId))
+      .limit(1);
+
+    if (episode.length === 0) {
+      return res.status(404).json({ error: 'Episode not found' });
+    }
+
+    const ep = episode[0];
+
+    if (!ep.rssItemId || !ep.magnetLink) {
+      return res.status(400).json({ error: 'Episode has no RSS item linked or magnet link not available' });
+    }
+
+    // Trigger download via qBittorrent service
+    const qbittorrentService = require('../services/qbittorrentService');
+    const result = await qbittorrentService.addMagnet(ep.magnetLink, 'autoanime');
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.message || 'Failed to add torrent to qBittorrent' });
+    }
+
+    // Extract torrent hash
+    const hashMatch = ep.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+    const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+
+    // Save download record
+    if (torrentHash) {
+      const { qbittorrentDownloads } = require('../db/schema');
+      const now = new Date();
+      await db.insert(qbittorrentDownloads).values({
+        torrentHash,
+        magnetLink: ep.magnetLink,
+        seriesId: ep.seriesId,
+        episodeId: ep.id,
+        createdAt: now,
+        updatedAt: now
+      }).onConflictDoNothing();
+    }
+
+    res.json({ success: true, message: 'Download started', torrentHash });
+  } catch (error) {
+    console.error('Error downloading episode:', error);
+    res.status(500).json({ error: 'Failed to download episode' });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
@@ -538,5 +602,6 @@ module.exports = {
   toggleEpisodeAutoDownload,
   getSeriesAutoDownloadStatus,
   resetRssMatches,
-  updateEpisodeRssItem
+  updateEpisodeRssItem,
+  downloadEpisode
 };
