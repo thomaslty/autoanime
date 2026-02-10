@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { cn } from "../lib/utils"
 
 export function RSSSourcesPage() {
@@ -31,6 +32,8 @@ export function RSSSourcesPage() {
   const [sortDir, setSortDir] = useState("desc")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null)
+  const [clearConfirmId, setClearConfirmId] = useState(null)
   const navigate = useNavigate()
 
   const fetchFeeds = async () => {
@@ -131,15 +134,16 @@ export function RSSSourcesPage() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this feed?")) return
-
+  const handleDelete = async () => {
+    if (!deleteConfirmId) return
     try {
-      const response = await fetch(`/api/rss/${id}`, { method: "DELETE" })
+      const response = await fetch(`/api/rss/${deleteConfirmId}`, { method: "DELETE" })
       if (!response.ok) throw new Error("Failed to delete feed")
       fetchFeeds()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setDeleteConfirmId(null)
     }
   }
 
@@ -166,10 +170,11 @@ export function RSSSourcesPage() {
     }
   }
 
-  const handleClearItems = async (id) => {
-    if (!confirm("Are you sure you want to clear all RSS items for this feed?")) return
-
+  const handleClearItems = async () => {
+    if (!clearConfirmId) return
     try {
+      const id = clearConfirmId
+      setClearConfirmId(null)
       const response = await fetch(`/api/rss/${id}/items`, { method: "DELETE" })
       if (!response.ok) throw new Error("Failed to clear RSS items")
       fetchFeeds()
@@ -389,13 +394,13 @@ export function RSSSourcesPage() {
                                 <Edit2 size={14} className="mr-2" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleClearItems(feed.id)}>
+                              <DropdownMenuItem onClick={() => setClearConfirmId(feed.id)}>
                                 <Trash size={14} className="mr-2" />
                                 Clear RSS Items
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                onClick={() => handleDelete(feed.id)}
+                                onClick={() => setDeleteConfirmId(feed.id)}
                                 className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 size={14} className="mr-2" />
@@ -561,6 +566,40 @@ export function RSSSourcesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete RSS Feed</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this feed? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!clearConfirmId} onOpenChange={(open) => !open && setClearConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear RSS Items</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to clear all RSS items for this feed? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearItems} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   )
 }

@@ -3,26 +3,9 @@ const { db } = require('../db/db');
 const { series, seriesSeasons, rssConfig, rssItem, seriesEpisodes } = require('../db/schema');
 const { eq, and, isNotNull, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
+const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 
 let schedulerInterval = null;
-
-const extractEpisodeNumber = (title) => {
-  // Try common patterns: E13, Episode 13, - 13, 13th, etc.
-  const patterns = [
-    /E(\d+)/i,
-    /Episode\s+(\d+)/i,
-    /-\s*(\d+)\s*\[/,
-    /\b(\d+)\s*(?:th|st|nd|rd)?\s*(?:episode|ep)?\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = title.match(pattern);
-    if (match) {
-      return parseInt(match[1], 10);
-    }
-  }
-  return null;
-};
 
 const triggerAutoDownloads = async (rssId, newItems) => {
   if (!newItems || newItems.length === 0) return;
@@ -67,15 +50,16 @@ const triggerAutoDownloads = async (rssId, newItems) => {
 
       // Check series-level configs
       for (const s of seriesList) {
-        const pattern = new RegExp(s.configRegex, 'i');
-        if (pattern.test(item.title)) {
+        // Convert custom regex to standard regex (without specific episode number for initial matching)
+        const pattern = convertCustomRegexToStandard(s.configRegex);
+        if (pattern && pattern.test(item.title)) {
           // Check if this series has a season-level override that would handle this
           const hasSeasonOverride = seasonsList.some(ss => ss.seriesId === s.id);
           if (!hasSeasonOverride) {
-            // Extract episode number and apply offset
+            // Extract episode number from RSS title and apply offset
             const rssEpisodeNumber = extractEpisodeNumber(item.title);
-            if (rssEpisodeNumber !== null && s.configOffset) {
-              const actualEpisodeNumber = rssEpisodeNumber - s.configOffset;
+            if (rssEpisodeNumber !== null) {
+              const actualEpisodeNumber = calculateActualEpisode(rssEpisodeNumber, s.configOffset);
               // Find and update the episode
               const episode = await db.select({ id: seriesEpisodes.id })
                 .from(seriesEpisodes)
@@ -104,12 +88,13 @@ const triggerAutoDownloads = async (rssId, newItems) => {
 
       // Check season-level configs
       for (const season of seasonsList) {
-        const pattern = new RegExp(season.configRegex, 'i');
-        if (pattern.test(item.title)) {
-          // Extract episode number and apply offset
+        // Convert custom regex to standard regex (without specific episode number for initial matching)
+        const pattern = convertCustomRegexToStandard(season.configRegex);
+        if (pattern && pattern.test(item.title)) {
+          // Extract episode number from RSS title and apply offset
           const rssEpisodeNumber = extractEpisodeNumber(item.title);
-          if (rssEpisodeNumber !== null && season.configOffset) {
-            const actualEpisodeNumber = rssEpisodeNumber - season.configOffset;
+          if (rssEpisodeNumber !== null) {
+            const actualEpisodeNumber = calculateActualEpisode(rssEpisodeNumber, season.configOffset);
             // Find and update the episode
             const episode = await db.select({ id: seriesEpisodes.id })
               .from(seriesEpisodes)

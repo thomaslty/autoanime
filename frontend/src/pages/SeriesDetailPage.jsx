@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 const AutoDownloadStatus = {
   DISABLED: 0,
@@ -62,6 +63,9 @@ export function SeriesDetailPage() {
   const [applyingMatches, setApplyingMatches] = useState(false)
   const [previewSearch, setPreviewSearch] = useState("")
   const [previewSort, setPreviewSort] = useState({ field: 'seasonNumber', dir: 'desc' })
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [showApplyConfirm, setShowApplyConfirm] = useState(false)
+  const [updatingEpisodeIds, setUpdatingEpisodeIds] = useState(new Set())
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -257,8 +261,7 @@ export function SeriesDetailPage() {
   }
 
   const handleResetRssMatches = async () => {
-    if (!confirm("Are you sure you want to reset all RSS matches? This will clear the link between episodes and RSS items.")) return
-
+    setShowResetConfirm(false)
     setResettingRss(true)
     try {
       const response = await fetch(`/api/sonarr/series/${id}/rss-matches/reset`, { method: "POST" })
@@ -294,8 +297,7 @@ export function SeriesDetailPage() {
   }
 
   const handleApplyMatches = async () => {
-    if (!confirm("Are you sure you want to apply these RSS matches to the episodes? This will update the database.")) return
-
+    setShowApplyConfirm(false)
     setApplyingMatches(true)
     try {
       const response = await fetch(`/api/rss-config/preview/series/${id}/apply`, { method: "POST" })
@@ -312,6 +314,54 @@ export function SeriesDetailPage() {
       console.error("Error applying matches:", err)
     } finally {
       setApplyingMatches(false)
+    }
+  }
+
+  const handleLinkEpisode = async (episodeId, rssItemId) => {
+    setUpdatingEpisodeIds(prev => new Set(prev).add(episodeId))
+    try {
+      const response = await fetch(`/api/sonarr/episodes/${episodeId}/rss-item`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rssItemId })
+      })
+      if (!response.ok) {
+        throw new Error("Failed to link episode")
+      }
+      // Refresh preview to show updated status
+      fetchPreviewData()
+    } catch (err) {
+      console.error("Error linking episode:", err)
+    } finally {
+      setUpdatingEpisodeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(episodeId)
+        return newSet
+      })
+    }
+  }
+
+  const handleUnlinkEpisode = async (episodeId) => {
+    setUpdatingEpisodeIds(prev => new Set(prev).add(episodeId))
+    try {
+      const response = await fetch(`/api/sonarr/episodes/${episodeId}/rss-item`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rssItemId: null })
+      })
+      if (!response.ok) {
+        throw new Error("Failed to unlink episode")
+      }
+      // Refresh preview to show updated status
+      fetchPreviewData()
+    } catch (err) {
+      console.error("Error unlinking episode:", err)
+    } finally {
+      setUpdatingEpisodeIds(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(episodeId)
+        return newSet
+      })
     }
   }
 
@@ -452,7 +502,7 @@ export function SeriesDetailPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={openPreviewModal}>
                       <Eye size={16} className="mr-2" />
-                      Preview RSS Matches
+                      Configure RSS Matches
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -641,17 +691,10 @@ export function SeriesDetailPage() {
             )}
           </div>
           <DialogFooter>
-            <div className="flex w-full justify-between items-center">
-              <Button variant="destructive" size="sm" onClick={handleResetRssMatches} disabled={resettingRss}>
-                {resettingRss ? "Resetting..." : "Reset Matches"}
-              </Button>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
-                <Button onClick={handleSaveRssConfig} disabled={savingRss}>
-                  {savingRss ? "Saving..." : "Save"}
-                </Button>
-              </div>
-            </div>
+            <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
+            <Button onClick={handleSaveRssConfig} disabled={savingRss}>
+              {savingRss ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -663,9 +706,9 @@ export function SeriesDetailPage() {
             <DialogTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Eye size={18} />
-                RSS Preview - Episode Matches
+                Configure RSS Matches
               </div>
-              <Button variant="outline" size="sm" onClick={fetchPreviewData} disabled={previewLoading}>
+              <Button className="mr-10" variant="outline" size="sm" onClick={fetchPreviewData} disabled={previewLoading}>
                 <RefreshCw size={14} className={`mr-2 ${previewLoading ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
@@ -707,7 +750,8 @@ export function SeriesDetailPage() {
                       <TableHead>Episode Title</TableHead>
                       <TableHead>Current RSS</TableHead>
                       <TableHead>Preview Match</TableHead>
-                      <TableHead>Action</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -776,6 +820,33 @@ export function SeriesDetailPage() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
+                          <TableCell className="text-right">
+                            {updatingEpisodeIds.has(item.episodeId) ? (
+                              <Button size="sm" variant="ghost" disabled>
+                                <RefreshCw size={14} className="animate-spin" />
+                              </Button>
+                            ) : item.rssItemId && item.rssItemId !== item.currentRssItemId ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleLinkEpisode(item.episodeId, item.rssItemId)}
+                                className="text-green-700 border-green-200 hover:bg-green-50"
+                              >
+                                Link
+                              </Button>
+                            ) : item.currentRssItemId ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUnlinkEpisode(item.episodeId)}
+                                className="text-red-700 border-red-200 hover:bg-red-50"
+                              >
+                                Unlink
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">-</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                   </TableBody>
@@ -784,18 +855,57 @@ export function SeriesDetailPage() {
             )}
           </div>
           <DialogFooter className="flex justify-between items-center sm:justify-between w-full">
-            <div className="text-sm text-muted-foreground">
-              {previewData.filter(i => i.rssItemTitle && i.rssItemTitle !== i.currentRssItemTitle).length} new matches found
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-muted-foreground">
+                {previewData.filter(i => i.rssItemTitle && i.rssItemTitle !== i.currentRssItemTitle).length} new matches found
+              </div>
+              <Button variant="destructive" size="sm" onClick={() => setShowResetConfirm(true)} disabled={resettingRss}>
+                {resettingRss ? "Resetting..." : "Reset All Matches"}
+              </Button>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
-              <Button onClick={handleApplyMatches} disabled={applyingMatches || previewLoading || previewData.length === 0}>
-                {applyingMatches ? "Applying..." : "Apply Matches"}
+              <Button onClick={() => setShowApplyConfirm(true)} disabled={applyingMatches || previewLoading || previewData.length === 0}>
+                {applyingMatches ? "Applying..." : "Apply All Matches"}
               </Button>
             </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset RSS Matches</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to reset all RSS matches? This will clear the link between episodes and RSS items.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetRssMatches} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply RSS Matches</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to apply these RSS matches to the episodes? This will update the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleApplyMatches}>
+              Apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   )
 }

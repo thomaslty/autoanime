@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 const EMPTY_FORM = { name: "", description: "", regex: "", rssSourceId: "", offset: "", isEnabled: true }
 
@@ -33,6 +34,7 @@ export function RSSAnimeConfigsPage() {
   const [sortDir, setSortDir] = useState("desc")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null)
   const navigate = useNavigate()
 
   const fetchData = async () => {
@@ -86,14 +88,18 @@ export function RSSAnimeConfigsPage() {
   }
 
   const validateRegex = (pattern) => {
-    try {
-      new RegExp(pattern)
-      setRegexError(null)
-      return true
-    } catch (e) {
-      setRegexError(e.message)
+    // Custom regex validation
+    if (!pattern || pattern.trim() === "") {
+      setRegexError("Regex pattern cannot be empty")
       return false
     }
+    // :ep: is mandatory - it's used to match episode numbers
+    if (!pattern.includes(":ep:")) {
+      setRegexError("Pattern must include :ep: placeholder for episode matching")
+      return false
+    }
+    setRegexError(null)
+    return true
   }
 
   const handleRegexChange = (value) => {
@@ -113,7 +119,8 @@ export function RSSAnimeConfigsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           rssSourceId: parseInt(formData.rssSourceId),
-          regex: formData.regex
+          regex: formData.regex,
+          offset: formData.offset ? parseInt(formData.offset, 10) : null
         })
       })
       if (!response.ok) {
@@ -166,14 +173,16 @@ export function RSSAnimeConfigsPage() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this config?")) return
+  const handleDelete = async () => {
+    if (!deleteConfirmId) return
     try {
-      const response = await fetch(`/api/rss-config/${id}`, { method: "DELETE" })
+      const response = await fetch(`/api/rss-config/${deleteConfirmId}`, { method: "DELETE" })
       if (!response.ok) throw new Error("Failed to delete config")
       fetchData()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setDeleteConfirmId(null)
     }
   }
 
@@ -367,7 +376,7 @@ export function RSSAnimeConfigsPage() {
                           }} title="Edit">
                             <Edit2 size={16} />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(config.id)} title="Delete" className="hover:text-destructive">
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(config.id)} title="Delete" className="hover:text-destructive">
                             <Trash2 size={16} />
                           </Button>
                         </div>
@@ -423,11 +432,11 @@ export function RSSAnimeConfigsPage() {
           setRegexError(null)
         }
       }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>{editingConfig ? "Edit RSS Config" : "Add RSS Config"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-1">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -447,16 +456,33 @@ export function RSSAnimeConfigsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="regex">Regex Pattern</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="regex">Regex Pattern</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle size={16} className="text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-semibold mb-2">Custom Regex Symbols:</p>
+                      <ul className="space-y-1">
+                        <li><b>:ep:</b> - Episode number placeholder</li>
+                        <li><b>:*:</b> - Any character (wildcard)</li>
+                      </ul>
+                      <p className="mt-2 text-xs">Example: <code>:*:[:ep:]:*:</code> matches any episode of that series</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Input
                 id="regex"
                 value={formData.regex}
                 onChange={(e) => handleRegexChange(e.target.value)}
-                placeholder="e.g. Blue.?Lock.*S2|1080p"
+                placeholder="e.g. :*:[Blue Lock][:ep:]:*:"
                 className={regexError ? "border-destructive" : ""}
               />
               {regexError && <p className="text-xs text-destructive">{regexError}</p>}
-              <p className="text-xs text-muted-foreground">Case-insensitive regex to match RSS item titles</p>
+              <p className="text-xs text-muted-foreground">Use custom syntax with :ep: for episode number and :*: for wildcards</p>
             </div>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -515,14 +541,33 @@ export function RSSAnimeConfigsPage() {
                 <div className="text-sm text-muted-foreground mb-1">
                   {preview.matched.length} of {preview.total} items matched
                 </div>
-                <div className="max-h-48 overflow-y-auto border rounded-md">
+                <div className="max-h-64 overflow-auto border rounded-md w-full">
                   {preview.matched.length === 0 ? (
                     <div className="p-3 text-sm text-muted-foreground">No items matched</div>
                   ) : (
-                    <div className="divide-y">
-                      {preview.matched.map(item => (
-                        <div key={item.id} className="px-3 py-2 text-xs">{item.title}</div>
-                      ))}
+                    <div className="w-full overflow-x-auto">
+                      <Table className="w-full">
+                        <TableHeader className="sticky top-0 bg-background z-10">
+                          <TableRow>
+                            <TableHead className="max-w-0">RSS Title</TableHead>
+                            <TableHead className="w-32 text-right">Matched Episode</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {preview.matched.map(item => (
+                            <TableRow key={item.id}>
+                              <TableCell className="text-xs font-mono max-w-0 overflow-hidden text-ellipsis">{item.title}</TableCell>
+                              <TableCell className="text-xs font-semibold text-right whitespace-nowrap">
+                                {item.matchedEpisode || (
+                                  <span className="text-muted-foreground">
+                                    {item.rssEpisode ? `E${item.rssEpisode}` : '-'}
+                                  </span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
                   )}
                 </div>
@@ -554,6 +599,23 @@ export function RSSAnimeConfigsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete RSS Config</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this config? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   )
 }

@@ -1,6 +1,7 @@
 const { db } = require('../db/db');
 const { rssConfig, rss, rssItem, series, seriesSeasons, seriesEpisodes } = require('../db/schema');
 const { eq, and, asc, gt } = require('drizzle-orm');
+const { convertCustomRegexToStandard, calculateEffectiveEpisode, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 
 const getAllConfigs = async () => {
   return await db.select().from(rssConfig).orderBy(rssConfig.name);
@@ -48,11 +49,10 @@ const deleteConfig = async (id) => {
   return { success: true };
 };
 
-const previewConfig = async (rssSourceId, regex) => {
-  let pattern;
-  try {
-    pattern = new RegExp(regex, 'i');
-  } catch {
+const previewConfig = async (rssSourceId, regex, offset = null) => {
+  // Convert custom regex syntax to standard regex
+  const pattern = convertCustomRegexToStandard(regex);
+  if (!pattern) {
     return { success: false, message: 'Invalid regex pattern' };
   }
 
@@ -62,7 +62,28 @@ const previewConfig = async (rssSourceId, regex) => {
     .orderBy(rssItem.publishedDate)
     .limit(200);
 
-  const matched = items.filter(item => item.title && pattern.test(item.title));
+  // Filter and enhance matched items with episode information
+  const matched = items
+    .filter(item => item.title && pattern.test(item.title))
+    .map(item => {
+      // Extract episode number from RSS title
+      const rssEpisode = extractEpisodeNumber(item.title);
+
+      let matchedEpisode = null;
+      if (rssEpisode !== null) {
+        // Calculate actual episode using offset
+        const actualEpisode = calculateActualEpisode(rssEpisode, offset);
+        // Format as Exx
+        matchedEpisode = `E${String(actualEpisode).padStart(2, '0')}`;
+      }
+
+      return {
+        ...item,
+        rssEpisode,
+        matchedEpisode,
+      };
+    });
+
   return { success: true, matched, total: items.length };
 };
 
@@ -176,10 +197,13 @@ const getSeriesRssPreview = async (seriesId) => {
       };
     }
 
-    let pattern;
-    try {
-      pattern = new RegExp(config.regex, 'i');
-    } catch {
+    // Calculate effective episode number with offset
+    // Sonarr episode 5 + offset 13 = RSS episode 18
+    const effectiveEpisodeNumber = calculateEffectiveEpisode(episode.episodeNumber, config.offset);
+
+    // Convert custom regex with the effective episode number
+    const pattern = convertCustomRegexToStandard(config.regex, effectiveEpisodeNumber);
+    if (!pattern) {
       return {
         episodeId: episode.id,
         seasonNumber: episode.seasonNumber,
@@ -191,25 +215,11 @@ const getSeriesRssPreview = async (seriesId) => {
       };
     }
 
-    // Calculate effective episode number with offset
-    const effectiveEpisodeNumber = config.offset ? episode.episodeNumber + config.offset : episode.episodeNumber;
-
     // Find matching RSS items
     const matchingItems = allRssItems.filter(item => {
       if (!item.title) return false;
-
-      // Check if regex matches
-      if (!pattern.test(item.title)) return false;
-
-      // Extract episode number from title and check if it matches
-      // Common patterns: E13, Episode 13, - 13, etc.
-      const episodePatterns = [
-        new RegExp(`E0?${effectiveEpisodeNumber}\\b`, 'i'),
-        new RegExp(`Episode\\s+0?${effectiveEpisodeNumber}\\b`, 'i'),
-        new RegExp(`\\b0?${effectiveEpisodeNumber}\\b`, 'i'),
-      ];
-
-      return episodePatterns.some(ep => ep.test(item.title));
+      // Custom regex already includes episode number matching via :ep: placeholder
+      return pattern.test(item.title);
     });
 
     // Use the first match (most recent based on RSS item order)

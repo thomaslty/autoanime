@@ -496,6 +496,35 @@ const resetRssMatches = async (req, res) => {
   }
 };
 
+const updateEpisodeRssItem = async (req, res) => {
+  try {
+    const episodeId = parseInt(req.params.episodeId, 10);
+    const { rssItemId } = req.body;
+
+    if (isNaN(episodeId)) {
+      return res.status(400).json({ error: 'Invalid episode ID' });
+    }
+
+    // Update the episode's rssItemId (can be null to unlink)
+    const result = await db.update(seriesEpisodes)
+      .set({
+        rssItemId: rssItemId || null,
+        updatedAt: new Date()
+      })
+      .where(eq(seriesEpisodes.id, episodeId))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Episode not found' });
+    }
+
+    res.json({ success: true, episode: result[0] });
+  } catch (error) {
+    console.error('Error updating episode RSS item:', error);
+    res.status(500).json({ error: 'Failed to update episode RSS item' });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
@@ -508,5 +537,6 @@ module.exports = {
   toggleSeasonAutoDownload,
   toggleEpisodeAutoDownload,
   getSeriesAutoDownloadStatus,
-  resetRssMatches
+  resetRssMatches,
+  updateEpisodeRssItem
 };

@@ -1,5 +1,6 @@
 const rssConfigService = require('../services/rssConfigService');
 const { logger } = require('../utils/logger');
+const { validateCustomRegex } = require('../utils/regexHelper');
 
 const getConfigs = async (req, res) => {
   try {
@@ -30,8 +31,8 @@ const createConfig = async (req, res) => {
     if (!name || !regex) {
       return res.status(400).json({ error: 'Name and regex are required' });
     }
-    try { new RegExp(regex); } catch {
-      return res.status(400).json({ error: 'Invalid regex pattern' });
+    if (!validateCustomRegex(regex)) {
+      return res.status(400).json({ error: 'Invalid custom regex pattern' });
     }
     const config = await rssConfigService.createConfig({ name, description, regex, rssSourceId, offset, isEnabled });
     res.status(201).json(config);
@@ -46,10 +47,8 @@ const updateConfig = async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(404).json({ error: 'RSS config not found' });
     const { name, description, regex, rssSourceId, offset, isEnabled } = req.body;
-    if (regex !== undefined) {
-      try { new RegExp(regex); } catch {
-        return res.status(400).json({ error: 'Invalid regex pattern' });
-      }
+    if (regex !== undefined && !validateCustomRegex(regex)) {
+      return res.status(400).json({ error: 'Invalid custom regex pattern' });
     }
     const config = await rssConfigService.updateConfig(id, { name, description, regex, rssSourceId, offset, isEnabled });
     if (!config) return res.status(404).json({ error: 'RSS config not found' });
@@ -74,11 +73,12 @@ const deleteConfig = async (req, res) => {
 
 const previewConfig = async (req, res) => {
   try {
-    const { rssSourceId, regex } = req.body;
+    const { rssSourceId, regex, offset } = req.body;
     if (!rssSourceId || !regex) {
       return res.status(400).json({ error: 'rssSourceId and regex are required' });
     }
-    const result = await rssConfigService.previewConfig(parseInt(rssSourceId, 10), regex);
+    const offsetValue = offset !== undefined && offset !== null && offset !== '' ? parseInt(offset, 10) : null;
+    const result = await rssConfigService.previewConfig(parseInt(rssSourceId, 10), regex, offsetValue);
     if (!result.success) return res.status(400).json({ error: result.message });
     res.json(result);
   } catch (error) {

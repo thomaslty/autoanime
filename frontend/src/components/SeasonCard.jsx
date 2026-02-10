@@ -180,8 +180,8 @@ export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownl
     <Collapsible defaultOpen={season.monitored}>
       <Card>
         <CardHeader className="p-4">
-          <div className="flex items-center justify-between">
-            <CollapsibleTrigger className="flex-1">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg">Season {season.seasonNumber}</CardTitle>
@@ -208,7 +208,6 @@ export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownl
                       </p>
                     )}
                   </div>
-                  <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
                 </div>
               </div>
               {season.monitored && (
@@ -222,14 +221,22 @@ export function SeasonCard({ season, episodes, seriesId, onToggleSeasonAutoDownl
                   />
                 </div>
               )}
-            </CollapsibleTrigger>
-            <div className="flex items-center gap-2 ml-4 pl-4 border-l">
+            </div>
+
+            <div className="flex items-center gap-2 pl-4 border-l">
               <span className="text-sm text-muted-foreground">Auto</span>
               <Switch
                 checked={isAutoDownloadEnabled}
                 onCheckedChange={(checked) => onToggleSeasonAutoDownload(season.seasonNumber, checked)}
               />
             </div>
+
+            <CollapsibleTrigger asChild>
+              <button className="p-2 hover:bg-accent hover:text-accent-foreground rounded-md transition-colors">
+                <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform data-[state=open]:rotate-180" />
+                <span className="sr-only">Toggle</span>
+              </button>
+            </CollapsibleTrigger>
           </div>
         </CardHeader>
         <CollapsibleContent>
