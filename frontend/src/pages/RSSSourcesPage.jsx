@@ -125,10 +125,24 @@ export function RSSSourcesPage() {
 
       if (!response.ok) throw new Error("Failed to save feed")
 
+      const savedFeed = await response.json()
+
+      // Close modal and reset form immediately
       setShowModal(false)
       setEditingFeed(null)
       setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
+
+      // Refresh feed list to show the new feed
       fetchFeeds()
+
+      // If creating a new feed, trigger RSS fetch in the background (don't wait)
+      if (!editingFeed && savedFeed?.id) {
+        setFetchingId(savedFeed.id)
+        fetch(`/api/rss/${savedFeed.id}/fetch`, { method: "POST" })
+          .then(() => fetchFeeds())
+          .catch((fetchErr) => console.error("Error fetching new feed:", fetchErr))
+          .finally(() => setFetchingId(null))
+      }
     } catch (err) {
       setError(err.message)
     }
