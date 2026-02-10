@@ -67,7 +67,7 @@ function AppSidebar() {
       }
     }
     fetchHealth()
-    
+
     const interval = setInterval(fetchHealth, 30000)
     return () => clearInterval(interval)
   }, [])
@@ -92,7 +92,7 @@ function AppSidebar() {
   }
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" className="overflow-hidden">
       <SidebarHeader className="flex flex-row items-center justify-between py-4">
         <span className="text-lg font-bold px-2 group-data-[collapsible=icon]:hidden">AutoAnime</span>
         <SidebarTrigger className="size-7" />
