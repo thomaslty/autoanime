@@ -1,8 +1,7 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
-const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem } = require('../db/schema');
+const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
-const AutoDownloadStatus = require('../enums/autoDownloadStatus');
 
 const extractImageUrl = (images, coverType) => {
   const image = images?.find(img => img.coverType === coverType);
@@ -205,6 +204,7 @@ const getSeriesData = (item, now) => {
     ratingValue: ratings.value,
     ratingVotes: ratings.votes,
     monitored: item.monitored,
+    path: item.path,
     lastSyncedAt: now,
     rawData: item,
     updatedAt: now
@@ -556,6 +556,10 @@ const downloadEpisode = async (req, res) => {
       return res.status(400).json({ error: 'Episode has no RSS item linked or magnet link not available' });
     }
 
+    // Get DOWNLOADING status ID
+    const downloadingStatus = await db.select().from(downloadStatus).where(eq(downloadStatus.name, 'DOWNLOADING')).limit(1);
+    const downloadingStatusId = downloadingStatus[0]?.id;
+
     // Trigger download via qBittorrent service
     const qbittorrentService = require('../services/qbittorrentService');
     const result = await qbittorrentService.addMagnet(ep.magnetLink, 'autoanime');
@@ -574,21 +578,20 @@ const downloadEpisode = async (req, res) => {
     await db.update(seriesEpisodes)
       .set({
         downloadedAt: now,
-        autoDownloadStatus: AutoDownloadStatus.DOWNLOADING,
+        downloadStatusId: downloadingStatusId,
         updatedAt: now
       })
       .where(eq(seriesEpisodes.id, ep.id));
 
     // Save download record
     if (torrentHash) {
-      const { downloads } = require('../db/schema');
       await db.insert(downloads).values({
         torrentHash,
         magnetLink: ep.magnetLink,
         seriesEpisodeId: ep.id,
         rssItemId: ep.rssItemId,
         category: 'autoanime',
-        status: 'DOWNLOADING',
+        downloadStatusId: downloadingStatusId,
         name: ep.rssTitle,
         createdAt: now,
         updatedAt: now

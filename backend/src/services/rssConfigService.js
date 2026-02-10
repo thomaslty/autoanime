@@ -1,7 +1,22 @@
 const { db } = require('../db/db');
-const { rssConfig, rss, rssItem, series, seriesSeasons, seriesEpisodes } = require('../db/schema');
+const { rssConfig, rss, rssItem, series, seriesSeasons, seriesEpisodes, downloads, downloadStatus } = require('../db/schema');
 const { eq, and, asc, gt } = require('drizzle-orm');
 const { convertCustomRegexToStandard, calculateEffectiveEpisode, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
+const { logger } = require('../utils/logger');
+
+// Cache for download status IDs
+let downloadStatusCache = null;
+
+const getDownloadStatusIds = async () => {
+  if (downloadStatusCache) return downloadStatusCache;
+  
+  const statuses = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
+  downloadStatusCache = {};
+  for (const status of statuses) {
+    downloadStatusCache[status.name] = status.id;
+  }
+  return downloadStatusCache;
+};
 
 const getAllConfigs = async () => {
   return await db.select().from(rssConfig).orderBy(rssConfig.name);
@@ -87,12 +102,148 @@ const previewConfig = async (rssSourceId, regex, offset = null) => {
   return { success: true, matched, total: items.length };
 };
 
+/**
+ * Process historical RSS items for a specific series/season configuration
+ * This matches existing RSS items against episodes and triggers downloads if enabled
+ * @param {Object} config - RSS config object with regex, offset, rssSourceId
+ * @param {number} seriesId - Series ID
+ * @param {number|null} seasonNumber - Season number (null for series-level)
+ * @param {boolean} isAutoDownloadEnabled - Whether auto-download is enabled
+ */
+const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoDownloadEnabled) => {
+  if (!config || !config.regex || !config.rssSourceId) {
+    logger.info({ seriesId, seasonNumber }, 'Skipping historical RSS processing - no valid config');
+    return { matched: 0, downloaded: 0 };
+  }
+
+  try {
+    // Get download status IDs
+    const statusIds = await getDownloadStatusIds();
+    
+    // Get RSS items from the configured source
+    const rssItems = await db.select()
+      .from(rssItem)
+      .where(eq(rssItem.rssId, config.rssSourceId));
+
+    if (rssItems.length === 0) {
+      logger.info({ seriesId, rssSourceId: config.rssSourceId }, 'No RSS items found for source');
+      return { matched: 0, downloaded: 0 };
+    }
+
+    // Get episodes for this series/season
+    let episodeQuery = db.select({
+      id: seriesEpisodes.id,
+      episodeNumber: seriesEpisodes.episodeNumber,
+      seasonNumber: seriesEpisodes.seasonNumber,
+    })
+      .from(seriesEpisodes)
+      .where(eq(seriesEpisodes.seriesId, seriesId));
+
+    if (seasonNumber !== null) {
+      episodeQuery = episodeQuery.where(eq(seriesEpisodes.seasonNumber, seasonNumber));
+    }
+
+    const episodes = await episodeQuery;
+    const qbittorrentService = require('./qbittorrentService');
+
+    let matchedCount = 0;
+    let downloadedCount = 0;
+    const now = new Date();
+
+    for (const item of rssItems) {
+      if (!item.magnetLink || !item.title) continue;
+
+      // Test if this RSS item matches the regex
+      const pattern = convertCustomRegexToStandard(config.regex);
+      if (!pattern || !pattern.test(item.title)) continue;
+
+      // Extract episode number from RSS title
+      const rssEpisodeNumber = extractEpisodeNumber(item.title);
+      if (rssEpisodeNumber === null) continue;
+
+      // Calculate actual episode number using offset
+      const actualEpisodeNumber = calculateActualEpisode(rssEpisodeNumber, config.offset);
+
+      // Find matching episode
+      const matchingEpisode = episodes.find(ep =>
+        ep.episodeNumber === actualEpisodeNumber &&
+        (seasonNumber === null || ep.seasonNumber === seasonNumber)
+      );
+
+      if (!matchingEpisode) continue;
+
+      // Update episode with RSS item link
+      await db.update(seriesEpisodes)
+        .set({ rssItemId: item.id, updatedAt: now })
+        .where(eq(seriesEpisodes.id, matchingEpisode.id));
+
+      matchedCount++;
+      logger.info({
+        seriesId,
+        seasonNumber,
+        episodeNumber: actualEpisodeNumber,
+        rssItemId: item.id,
+        title: item.title
+      }, 'Historical RSS item matched to episode');
+
+      // Trigger download if auto-download is enabled
+      if (isAutoDownloadEnabled) {
+        const result = await qbittorrentService.addMagnet(item.magnetLink);
+        if (result.success) {
+          downloadedCount++;
+          
+          // Extract torrent hash and create download record
+          const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+          const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+          
+          if (torrentHash) {
+            await db.insert(downloads).values({
+              torrentHash,
+              magnetLink: item.magnetLink,
+              seriesEpisodeId: matchingEpisode.id,
+              rssItemId: item.id,
+              category: 'autoanime',
+              downloadStatusId: statusIds['DOWNLOADING'],
+              name: item.title,
+              createdAt: now,
+              updatedAt: now
+            }).onConflictDoNothing();
+          }
+          
+          logger.info({ item: item.title, seriesId, seasonNumber }, 'Auto-download triggered for historical item');
+        } else {
+          logger.error({ item: item.title, error: result.message }, 'Auto-download failed for historical item');
+        }
+      }
+    }
+
+    logger.info({ seriesId, seasonNumber, matched: matchedCount, downloaded: downloadedCount }, 'Historical RSS processing complete');
+    return { matched: matchedCount, downloaded: downloadedCount };
+  } catch (error) {
+    logger.error({ error: error.message, seriesId, seasonNumber }, 'Error processing historical RSS items');
+    return { matched: 0, downloaded: 0, error: error.message };
+  }
+};
+
 const assignToSeries = async (seriesId, configId) => {
   const result = await db.update(series)
     .set({ rssConfigId: configId || null, updatedAt: new Date() })
     .where(eq(series.id, seriesId))
     .returning();
-  return result[0];
+
+  const updatedSeries = result[0];
+
+  // Trigger historical RSS matching if config was assigned
+  if (configId && updatedSeries) {
+    const config = await getConfigById(configId);
+    if (config) {
+      // Run in background - don't await
+      processHistoricalRssItems(config, seriesId, null, updatedSeries.isAutoDownloadEnabled)
+        .catch(err => logger.error({ error: err.message }, 'Background historical RSS processing failed'));
+    }
+  }
+
+  return updatedSeries;
 };
 
 const assignToSeason = async (seriesId, seasonNumber, configId) => {
@@ -100,7 +251,26 @@ const assignToSeason = async (seriesId, seasonNumber, configId) => {
     .set({ rssConfigId: configId || null, updatedAt: new Date() })
     .where(and(eq(seriesSeasons.seriesId, seriesId), eq(seriesSeasons.seasonNumber, seasonNumber)))
     .returning();
-  return result[0];
+
+  const updatedSeason = result[0];
+
+  // Trigger historical RSS matching if config was assigned
+  if (configId && updatedSeason) {
+    const config = await getConfigById(configId);
+    // Get series to check auto-download status
+    const seriesData = await db.select({ isAutoDownloadEnabled: series.isAutoDownloadEnabled })
+      .from(series)
+      .where(eq(series.id, seriesId))
+      .limit(1);
+
+    if (config && seriesData[0]) {
+      // Run in background - don't await
+      processHistoricalRssItems(config, seriesId, seasonNumber, seriesData[0].isAutoDownloadEnabled)
+        .catch(err => logger.error({ error: err.message }, 'Background historical RSS processing failed'));
+    }
+  }
+
+  return updatedSeason;
 };
 
 const getSeriesRssPreview = async (seriesId) => {
@@ -241,7 +411,7 @@ const getSeriesRssPreview = async (seriesId) => {
   return { success: true, data: previewData };
 };
 
-const applySeriesRssPreview = async (seriesId) => {
+const applySeriesRssPreview = async (seriesId, triggerDownloads = false) => {
   const previewResult = await getSeriesRssPreview(seriesId);
   if (!previewResult.success) {
     return previewResult;
@@ -249,6 +419,18 @@ const applySeriesRssPreview = async (seriesId) => {
 
   const updates = [];
   const now = new Date();
+  const qbittorrentService = require('./qbittorrentService');
+  let downloadCount = 0;
+
+  // Get download status IDs
+  const statusIds = await getDownloadStatusIds();
+  
+  // Get series info to check auto-download status
+  const seriesData = await db.select({ isAutoDownloadEnabled: series.isAutoDownloadEnabled })
+    .from(series)
+    .where(eq(series.id, seriesId))
+    .limit(1);
+  const shouldTriggerDownloads = triggerDownloads && seriesData[0]?.isAutoDownloadEnabled;
 
   for (const item of previewResult.data) {
     // Only update if there's a change
@@ -260,6 +442,61 @@ const applySeriesRssPreview = async (seriesId) => {
             .set({ rssItemId: item.rssItemId, updatedAt: now })
             .where(eq(seriesEpisodes.id, item.episodeId))
         );
+
+        // Trigger download if requested and auto-download is enabled
+        if (shouldTriggerDownloads && item.rssItemLink) {
+          try {
+            // Get the RSS item to get the magnet link
+            const rssItemData = await db.select()
+              .from(rssItem)
+              .where(eq(rssItem.id, item.rssItemId))
+              .limit(1);
+
+            if (rssItemData[0]?.magnetLink) {
+              const result = await qbittorrentService.addMagnet(rssItemData[0].magnetLink);
+              if (result.success) {
+                downloadCount++;
+                
+                // Extract torrent hash and create download record
+                const hashMatch = rssItemData[0].magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+                const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+                
+                if (torrentHash) {
+                  await db.insert(downloads).values({
+                    torrentHash,
+                    magnetLink: rssItemData[0].magnetLink,
+                    seriesEpisodeId: item.episodeId,
+                    rssItemId: item.rssItemId,
+                    category: 'autoanime',
+                    downloadStatusId: statusIds['DOWNLOADING'],
+                    name: item.rssItemTitle,
+                    createdAt: now,
+                    updatedAt: now
+                  }).onConflictDoNothing();
+                }
+                
+                logger.info({
+                  seriesId,
+                  episodeId: item.episodeId,
+                  rssItemId: item.rssItemId,
+                  title: item.rssItemTitle
+                }, 'Auto-download triggered from preview apply');
+              } else {
+                logger.error({
+                  seriesId,
+                  episodeId: item.episodeId,
+                  error: result.message
+                }, 'Auto-download failed from preview apply');
+              }
+            }
+          } catch (downloadError) {
+            logger.error({
+              seriesId,
+              episodeId: item.episodeId,
+              error: downloadError.message
+            }, 'Error triggering download from preview apply');
+          }
+        }
       } else if (item.currentRssItemId) {
         // Unlink if no longer matched but previously was
         updates.push(
@@ -275,7 +512,11 @@ const applySeriesRssPreview = async (seriesId) => {
     await Promise.all(updates);
   }
 
-  return { success: true, updatedCount: updates.length };
+  return {
+    success: true,
+    updatedCount: updates.length,
+    downloadsTriggered: downloadCount
+  };
 };
 
 module.exports = {
@@ -289,4 +530,5 @@ module.exports = {
   assignToSeason,
   getSeriesRssPreview,
   applySeriesRssPreview,
+  processHistoricalRssItems,
 };

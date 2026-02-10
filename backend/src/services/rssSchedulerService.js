@@ -1,16 +1,34 @@
 const { fetchAndParseRss, getOverdueFeeds } = require('./rssService');
 const { db } = require('../db/db');
-const { series, seriesSeasons, rssConfig, rssItem, seriesEpisodes } = require('../db/schema');
+const { series, seriesSeasons, rssConfig, rssItem, seriesEpisodes, downloads, downloadStatus } = require('../db/schema');
 const { eq, and, isNotNull, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
+const qbittorrentService = require('./qbittorrentService');
 
 let schedulerInterval = null;
+
+// Cache for download status IDs
+let downloadStatusCache = null;
+
+const getDownloadStatusIds = async () => {
+  if (downloadStatusCache) return downloadStatusCache;
+
+  const statuses = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
+  downloadStatusCache = {};
+  for (const status of statuses) {
+    downloadStatusCache[status.name] = status.id;
+  }
+  return downloadStatusCache;
+};
 
 const triggerAutoDownloads = async (rssId, newItems) => {
   if (!newItems || newItems.length === 0) return;
 
   try {
+    // Get download status IDs
+    const statusIds = await getDownloadStatusIds();
+
     // Find series with auto-download enabled that use a config linked to this rss source
     const seriesList = await db.select({
       id: series.id,
@@ -42,8 +60,6 @@ const triggerAutoDownloads = async (rssId, newItems) => {
         eq(rssConfig.rssSourceId, rssId),
         eq(rssConfig.isEnabled, true)
       ));
-
-    const qbittorrentService = require('./qbittorrentService');
 
     for (const item of newItems) {
       if (!item.magnetLink || !item.title) continue;
@@ -78,6 +94,25 @@ const triggerAutoDownloads = async (rssId, newItems) => {
             logger.info({ series: s.title, item: item.title }, 'Auto-download match for series');
             const result = await qbittorrentService.addMagnet(item.magnetLink);
             if (result.success) {
+              // Extract torrent hash and create download record
+              const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+              const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+
+              if (torrentHash && episode[0]) {
+                const now = new Date();
+                await db.insert(downloads).values({
+                  torrentHash,
+                  magnetLink: item.magnetLink,
+                  seriesEpisodeId: episode[0].id,
+                  rssItemId: item.id,
+                  category: 'autoanime',
+                  downloadStatusId: statusIds['DOWNLOADING'],
+                  name: item.title,
+                  createdAt: now,
+                  updatedAt: now
+                }).onConflictDoNothing();
+              }
+
               logger.info({ item: item.title }, 'Auto-download triggered');
             } else {
               logger.error({ item: item.title, error: result.message }, 'Auto-download failed');
@@ -114,6 +149,25 @@ const triggerAutoDownloads = async (rssId, newItems) => {
           logger.info({ seriesId: season.seriesId, season: season.seasonNumber, item: item.title }, 'Auto-download match for season');
           const result = await qbittorrentService.addMagnet(item.magnetLink);
           if (result.success) {
+            // Extract torrent hash and create download record
+            const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+            const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+
+            if (torrentHash && episode[0]) {
+              const now = new Date();
+              await db.insert(downloads).values({
+                torrentHash,
+                magnetLink: item.magnetLink,
+                seriesEpisodeId: episode[0].id,
+                rssItemId: item.id,
+                category: 'autoanime',
+                downloadStatusId: statusIds['DOWNLOADING'],
+                name: item.title,
+                createdAt: now,
+                updatedAt: now
+              }).onConflictDoNothing();
+            }
+
             logger.info({ item: item.title }, 'Auto-download triggered');
           } else {
             logger.error({ item: item.title, error: result.message }, 'Auto-download failed');
@@ -128,20 +182,21 @@ const triggerAutoDownloads = async (rssId, newItems) => {
 
 const runScheduler = async () => {
   try {
+    // Fetch overdue RSS feeds and trigger auto-downloads for new items
     const overdueFeeds = await getOverdueFeeds();
-    if (overdueFeeds.length === 0) return;
+    if (overdueFeeds.length > 0) {
+      logger.info({ feedCount: overdueFeeds.length }, 'Fetching overdue feeds');
+      for (const feed of overdueFeeds) {
+        try {
+          const result = await fetchAndParseRss(feed.id);
+          logger.info({ feedId: feed.id, feedName: feed.name, message: result.message }, 'Feed fetch result');
 
-    logger.info({ feedCount: overdueFeeds.length }, 'Fetching overdue feeds');
-    for (const feed of overdueFeeds) {
-      try {
-        const result = await fetchAndParseRss(feed.id);
-        logger.info({ feedId: feed.id, feedName: feed.name, message: result.message }, 'Feed fetch result');
-
-        if (result.success && result.newItemsList && result.newItemsList.length > 0) {
-          await triggerAutoDownloads(feed.id, result.newItemsList);
+          if (result.success && result.newItemsList && result.newItemsList.length > 0) {
+            await triggerAutoDownloads(feed.id, result.newItemsList);
+          }
+        } catch (error) {
+          logger.error({ feedId: feed.id, feedName: feed.name, error: error.message }, 'Failed to fetch feed');
         }
-      } catch (error) {
-        logger.error({ feedId: feed.id, feedName: feed.name, error: error.message }, 'Failed to fetch feed');
       }
     }
   } catch (error) {

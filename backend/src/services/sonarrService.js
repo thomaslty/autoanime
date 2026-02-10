@@ -1,8 +1,21 @@
 const configService = require('./configService');
 const { db } = require('../db/db');
-const { series, seriesSeasons, seriesEpisodes } = require('../db/schema');
+const { series, seriesSeasons, seriesEpisodes, downloadStatus } = require('../db/schema');
 const { eq, and, inArray } = require('drizzle-orm');
-const AutoDownloadStatus = require('../enums/autoDownloadStatus');
+
+// Cache for download status IDs
+let downloadStatusCache = null;
+
+const getDownloadStatusIds = async () => {
+  if (downloadStatusCache) return downloadStatusCache;
+  
+  const statuses = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
+  downloadStatusCache = {};
+  for (const status of statuses) {
+    downloadStatusCache[status.name] = status.id;
+  }
+  return downloadStatusCache;
+};
 
 const getSonarrConfig = async () => {
   const config = await configService.getConfig();
@@ -137,11 +150,12 @@ const getEpisodeById = async (episodeId) => {
 
 const toggleSeriesAutoDownload = async (seriesId, enabled) => {
   const now = new Date();
+  const statusIds = await getDownloadStatusIds();
 
   await db.update(series)
     .set({
       isAutoDownloadEnabled: enabled,
-      downloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
       updatedAt: now
     })
     .where(eq(series.id, seriesId));
@@ -152,6 +166,7 @@ const toggleSeriesAutoDownload = async (seriesId, enabled) => {
 
 const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
   const now = new Date();
+  const statusIds = await getDownloadStatusIds();
 
   const season = await db.select().from(seriesSeasons).where(
     and(
@@ -169,7 +184,7 @@ const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
   await db.update(seriesSeasons)
     .set({
       isAutoDownloadEnabled: enabled,
-      autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
       updatedAt: now
     })
     .where(eq(seriesSeasons.id, seasonId));
@@ -177,7 +192,7 @@ const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
   await db.update(seriesEpisodes)
     .set({
       isAutoDownloadEnabled: enabled,
-      autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
       updatedAt: now
     })
     .where(
@@ -193,11 +208,12 @@ const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
 
 const toggleEpisodeAutoDownload = async (episodeId, enabled) => {
   const now = new Date();
+  const statusIds = await getDownloadStatusIds();
 
   await db.update(seriesEpisodes)
     .set({
       isAutoDownloadEnabled: enabled,
-      autoDownloadStatus: enabled ? AutoDownloadStatus.PENDING : AutoDownloadStatus.DISABLED,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
       updatedAt: now
     })
     .where(eq(seriesEpisodes.id, episodeId));
@@ -207,13 +223,14 @@ const toggleEpisodeAutoDownload = async (episodeId, enabled) => {
 };
 
 const getSeriesDownloadStatus = async (seriesId) => {
+  const statusIds = await getDownloadStatusIds();
   const episodes = await db.select().from(seriesEpisodes).where(eq(seriesEpisodes.seriesId, seriesId));
 
   const totalEpisodes = episodes.length;
-  const downloadedCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.DOWNLOADED).length;
-  const downloadingCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.DOWNLOADING).length;
-  const pendingCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.PENDING).length;
-  const failedCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.FAILED).length;
+  const downloadedCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADED']).length;
+  const downloadingCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADING']).length;
+  const pendingCount = episodes.filter(e => e.downloadStatusId === statusIds['PENDING']).length;
+  const failedCount = episodes.filter(e => e.downloadStatusId === statusIds['FAILED']).length;
   const enabledCount = episodes.filter(e => e.isAutoDownloadEnabled).length;
 
   return {
@@ -228,6 +245,7 @@ const getSeriesDownloadStatus = async (seriesId) => {
 };
 
 const getSeasonDownloadStatus = async (seriesId, seasonNumber) => {
+  const statusIds = await getDownloadStatusIds();
   const episodes = await db.select().from(seriesEpisodes).where(
     and(
       eq(seriesEpisodes.seriesId, seriesId),
@@ -236,10 +254,10 @@ const getSeasonDownloadStatus = async (seriesId, seasonNumber) => {
   );
 
   const totalEpisodes = episodes.length;
-  const downloadedCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.DOWNLOADED).length;
-  const downloadingCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.DOWNLOADING).length;
-  const pendingCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.PENDING).length;
-  const failedCount = episodes.filter(e => e.autoDownloadStatus === AutoDownloadStatus.FAILED).length;
+  const downloadedCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADED']).length;
+  const downloadingCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADING']).length;
+  const pendingCount = episodes.filter(e => e.downloadStatusId === statusIds['PENDING']).length;
+  const failedCount = episodes.filter(e => e.downloadStatusId === statusIds['FAILED']).length;
   const enabledCount = episodes.filter(e => e.isAutoDownloadEnabled).length;
 
   return {
@@ -250,32 +268,32 @@ const getSeasonDownloadStatus = async (seriesId, seasonNumber) => {
     failedCount,
     enabledCount,
     isEnabled: enabledCount > 0,
-    aggregatedStatus: getAggregatedStatus(episodes)
+    aggregatedStatus: getAggregatedStatus(episodes, statusIds)
   };
 };
 
-const getAggregatedStatus = (episodes) => {
-  if (episodes.length === 0) return AutoDownloadStatus.DISABLED;
+const getAggregatedStatus = (episodes, statusIds) => {
+  if (episodes.length === 0) return statusIds ? statusIds['DISABLED'] : 0;
 
   const statusCounts = {};
   episodes.forEach(e => {
-    const status = e.autoDownloadStatus || AutoDownloadStatus.DISABLED;
+    const status = e.downloadStatusId || (statusIds ? statusIds['DISABLED'] : 0);
     statusCounts[status] = (statusCounts[status] || 0) + 1;
   });
 
-  if (statusCounts[AutoDownloadStatus.DOWNLOADING] > 0) {
-    return AutoDownloadStatus.DOWNLOADING;
-  } else if (statusCounts[AutoDownloadStatus.PENDING] > 0) {
-    return AutoDownloadStatus.PENDING;
-  } else if (statusCounts[AutoDownloadStatus.FAILED] > 0) {
-    return AutoDownloadStatus.FAILED;
-  } else if (statusCounts[AutoDownloadStatus.DOWNLOADED] === episodes.length) {
-    return AutoDownloadStatus.DOWNLOADED;
-  } else if (statusCounts[AutoDownloadStatus.SKIPPED] > 0) {
-    return AutoDownloadStatus.SKIPPED;
+  if (statusCounts[statusIds['DOWNLOADING']] > 0) {
+    return statusIds['DOWNLOADING'];
+  } else if (statusCounts[statusIds['PENDING']] > 0) {
+    return statusIds['PENDING'];
+  } else if (statusCounts[statusIds['FAILED']] > 0) {
+    return statusIds['FAILED'];
+  } else if (statusCounts[statusIds['DOWNLOADED']] === episodes.length) {
+    return statusIds['DOWNLOADED'];
+  } else if (statusCounts[statusIds['SKIPPED']] > 0) {
+    return statusIds['SKIPPED'];
   }
 
-  return AutoDownloadStatus.DISABLED;
+  return statusIds['DISABLED'];
 };
 
 module.exports = {

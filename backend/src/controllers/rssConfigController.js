@@ -133,7 +133,8 @@ const applySeriesRssPreview = async (req, res) => {
   try {
     const seriesId = parseInt(req.params.seriesId, 10);
     if (isNaN(seriesId)) return res.status(404).json({ error: 'Series not found' });
-    const result = await rssConfigService.applySeriesRssPreview(seriesId);
+    const { triggerDownloads } = req.body || {};
+    const result = await rssConfigService.applySeriesRssPreview(seriesId, triggerDownloads === true);
     if (!result.success) return res.status(400).json({ error: result.message });
     res.json(result);
   } catch (error) {

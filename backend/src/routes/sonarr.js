@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const sonarrController = require('../controllers/sonarrController');
 const rssConfigController = require('../controllers/rssConfigController');
+const { getDownloadStatuses } = require('../controllers/referenceController');
 
 router.get('/status', sonarrController.getStatus);
+router.get('/reference/download-statuses', getDownloadStatuses);
 router.get('/series', sonarrController.getSeries);
 router.get('/series/:id', sonarrController.getSeriesById);
 router.get('/series/:id/episodes', sonarrController.getSeriesEpisodes);

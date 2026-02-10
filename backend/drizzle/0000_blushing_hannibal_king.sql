@@ -40,8 +40,9 @@ CREATE TABLE "series" (
 	"rating_votes" integer,
 	"monitored" boolean DEFAULT true,
 	"is_auto_download_enabled" boolean DEFAULT false,
-	"download_status" integer DEFAULT 0,
+	"download_status_id" integer,
 	"rss_config_id" integer,
+	"path" text,
 	"last_synced_at" timestamp DEFAULT now(),
 	"raw_data" jsonb,
 	"created_at" timestamp DEFAULT now(),
@@ -54,7 +55,7 @@ CREATE TABLE "rss" (
 	"name" varchar NOT NULL,
 	"description" text,
 	"url" varchar NOT NULL,
-	"template_id" integer DEFAULT 0,
+	"template_id" integer,
 	"is_enabled" boolean DEFAULT true,
 	"last_fetched_at" timestamp,
 	"refresh_interval" varchar DEFAULT '1h',
@@ -97,7 +98,7 @@ CREATE TABLE "downloads" (
 	"series_episode_id" integer,
 	"rss_item_id" integer,
 	"category" varchar,
-	"status" varchar DEFAULT 'PENDING',
+	"download_status_id" integer,
 	"name" varchar,
 	"size" bigint,
 	"progress" numeric(5, 2) DEFAULT '0',
@@ -149,7 +150,7 @@ CREATE TABLE "series_seasons" (
 	"next_airing" timestamp,
 	"previous_airing" timestamp,
 	"is_auto_download_enabled" boolean DEFAULT false,
-	"auto_download_status" integer DEFAULT 0,
+	"download_status_id" integer,
 	"rss_config_id" integer,
 	"created_at" timestamp DEFAULT now(),
 	"updated_at" timestamp DEFAULT now()
@@ -168,7 +169,7 @@ CREATE TABLE "series_episodes" (
 	"has_file" boolean DEFAULT false,
 	"monitored" boolean DEFAULT true,
 	"is_auto_download_enabled" boolean DEFAULT false,
-	"auto_download_status" integer DEFAULT 0,
+	"download_status_id" integer,
 	"downloaded_at" timestamp,
 	"rss_item_id" integer,
 	"created_at" timestamp DEFAULT now(),
@@ -176,17 +177,46 @@ CREATE TABLE "series_episodes" (
 	CONSTRAINT "series_episodes_sonarr_episode_id_unique" UNIQUE("sonarr_episode_id")
 );
 --> statement-breakpoint
+CREATE TABLE "download_status" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" varchar(50) NOT NULL,
+	"label" varchar(50) NOT NULL,
+	"description" text,
+	"sort_order" integer DEFAULT 0,
+	"is_active" boolean DEFAULT true,
+	"created_at" timestamp DEFAULT now(),
+	"updated_at" timestamp DEFAULT now(),
+	CONSTRAINT "download_status_name_unique" UNIQUE("name")
+);
+--> statement-breakpoint
+CREATE TABLE "rss_template" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" varchar(50) NOT NULL,
+	"label" varchar(50) NOT NULL,
+	"description" text,
+	"parser" varchar(50),
+	"is_active" boolean DEFAULT true,
+	"created_at" timestamp DEFAULT now(),
+	"updated_at" timestamp DEFAULT now(),
+	CONSTRAINT "rss_template_name_unique" UNIQUE("name")
+);
+--> statement-breakpoint
+ALTER TABLE "series" ADD CONSTRAINT "series_download_status_id_download_status_id_fk" FOREIGN KEY ("download_status_id") REFERENCES "public"."download_status"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series" ADD CONSTRAINT "series_rss_config_id_rss_config_id_fk" FOREIGN KEY ("rss_config_id") REFERENCES "public"."rss_config"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "rss" ADD CONSTRAINT "rss_template_id_rss_template_id_fk" FOREIGN KEY ("template_id") REFERENCES "public"."rss_template"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "rss_item" ADD CONSTRAINT "rss_item_rss_id_rss_id_fk" FOREIGN KEY ("rss_id") REFERENCES "public"."rss"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "rss_config" ADD CONSTRAINT "rss_config_rss_source_id_rss_id_fk" FOREIGN KEY ("rss_source_id") REFERENCES "public"."rss"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "downloads" ADD CONSTRAINT "downloads_series_episode_id_series_episodes_id_fk" FOREIGN KEY ("series_episode_id") REFERENCES "public"."series_episodes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "downloads" ADD CONSTRAINT "downloads_rss_item_id_rss_item_id_fk" FOREIGN KEY ("rss_item_id") REFERENCES "public"."rss_item"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "downloads" ADD CONSTRAINT "downloads_download_status_id_download_status_id_fk" FOREIGN KEY ("download_status_id") REFERENCES "public"."download_status"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_images" ADD CONSTRAINT "series_images_series_id_series_id_fk" FOREIGN KEY ("series_id") REFERENCES "public"."series"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_alternate_titles" ADD CONSTRAINT "series_alternate_titles_series_id_series_id_fk" FOREIGN KEY ("series_id") REFERENCES "public"."series"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_seasons" ADD CONSTRAINT "series_seasons_series_id_series_id_fk" FOREIGN KEY ("series_id") REFERENCES "public"."series"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "series_seasons" ADD CONSTRAINT "series_seasons_download_status_id_download_status_id_fk" FOREIGN KEY ("download_status_id") REFERENCES "public"."download_status"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_seasons" ADD CONSTRAINT "series_seasons_rss_config_id_rss_config_id_fk" FOREIGN KEY ("rss_config_id") REFERENCES "public"."rss_config"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_episodes" ADD CONSTRAINT "series_episodes_series_id_series_id_fk" FOREIGN KEY ("series_id") REFERENCES "public"."series"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_episodes" ADD CONSTRAINT "series_episodes_season_id_series_seasons_id_fk" FOREIGN KEY ("season_id") REFERENCES "public"."series_seasons"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "series_episodes" ADD CONSTRAINT "series_episodes_download_status_id_download_status_id_fk" FOREIGN KEY ("download_status_id") REFERENCES "public"."download_status"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "series_episodes" ADD CONSTRAINT "series_episodes_rss_item_id_rss_item_id_fk" FOREIGN KEY ("rss_item_id") REFERENCES "public"."rss_item"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_series_title" ON "series" USING btree ("title");--> statement-breakpoint
 CREATE INDEX "idx_series_status" ON "series" USING btree ("status");--> statement-breakpoint
@@ -202,7 +232,7 @@ CREATE INDEX "idx_rss_item_guid" ON "rss_item" USING btree ("guid");--> statemen
 CREATE INDEX "idx_rss_item_published" ON "rss_item" USING btree ("published_date");--> statement-breakpoint
 CREATE INDEX "idx_rss_config_name" ON "rss_config" USING btree ("name");--> statement-breakpoint
 CREATE INDEX "idx_rss_config_rss_source" ON "rss_config" USING btree ("rss_source_id");--> statement-breakpoint
-CREATE INDEX "idx_downloads_status" ON "downloads" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_downloads_status" ON "downloads" USING btree ("download_status_id");--> statement-breakpoint
 CREATE INDEX "idx_downloads_hash" ON "downloads" USING btree ("torrent_hash");--> statement-breakpoint
 CREATE INDEX "idx_downloads_episode" ON "downloads" USING btree ("series_episode_id");--> statement-breakpoint
 CREATE INDEX "idx_downloads_rss_item" ON "downloads" USING btree ("rss_item_id");--> statement-breakpoint
@@ -216,4 +246,7 @@ CREATE INDEX "idx_series_seasons_number" ON "series_seasons" USING btree ("seaso
 CREATE INDEX "idx_episodes_series" ON "series_episodes" USING btree ("series_id");--> statement-breakpoint
 CREATE INDEX "idx_episodes_season" ON "series_episodes" USING btree ("season_id");--> statement-breakpoint
 CREATE INDEX "idx_episodes_sonarr_id" ON "series_episodes" USING btree ("sonarr_episode_id");--> statement-breakpoint
-CREATE INDEX "idx_episodes_rss_item" ON "series_episodes" USING btree ("rss_item_id");
+CREATE INDEX "idx_episodes_rss_item" ON "series_episodes" USING btree ("rss_item_id");--> statement-breakpoint
+CREATE INDEX "idx_download_status_name" ON "download_status" USING btree ("name");--> statement-breakpoint
+CREATE INDEX "idx_download_status_sort" ON "download_status" USING btree ("sort_order");--> statement-breakpoint
+CREATE INDEX "idx_rss_template_name" ON "rss_template" USING btree ("name");

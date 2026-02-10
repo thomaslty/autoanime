@@ -1,4 +1,8 @@
 const configService = require('./configService');
+const { db } = require('../db/db');
+const { downloads, seriesEpisodes, downloadStatus } = require('../db/schema');
+const { eq, inArray } = require('drizzle-orm');
+const { logger } = require('../utils/logger');
 
 let cookie = null;
 let currentConfig = null;
@@ -20,7 +24,7 @@ const login = async () => {
   try {
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -35,7 +39,7 @@ const login = async () => {
     if (setCookie) {
       cookie = setCookie.split(';')[0];
     }
-    
+
     currentConfig = { ...config };
 
     return { success: true, message: 'Logged in successfully' };
@@ -46,12 +50,12 @@ const login = async () => {
 
 const ensureLogin = async () => {
   const config = await getQbitConfig();
-  
-  const configChanged = currentConfig && 
-    (currentConfig.url !== config.url || 
-     currentConfig.username !== config.username || 
-     currentConfig.password !== config.password);
-  
+
+  const configChanged = currentConfig &&
+    (currentConfig.url !== config.url ||
+      currentConfig.username !== config.username ||
+      currentConfig.password !== config.password);
+
   if (!cookie || configChanged) {
     cookie = null;
     const result = await login();
@@ -66,30 +70,30 @@ const getConnectionStatus = async () => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/app/version`, {
       headers: getHeaders(config.url)
     });
 
     if (!response.ok) {
-      return { 
-        connected: false, 
+      return {
+        connected: false,
         message: `API error: ${response.status}`,
         url: config.url
       };
     }
 
     const version = await response.text();
-    
+
     // Validate that response looks like a qBittorrent version, not HTML
     if (version.includes('<!DOCTYPE') || version.includes('<html') || version.length > 100) {
-      return { 
-        connected: false, 
+      return {
+        connected: false,
         message: 'Invalid response - received HTML instead of version. Check qBittorrent URL configuration.',
         url: config.url
       };
     }
-    
+
     return {
       connected: true,
       message: 'Connected to qBittorrent',
@@ -98,8 +102,8 @@ const getConnectionStatus = async () => {
     };
   } catch (error) {
     const config = await getQbitConfig();
-    return { 
-      connected: false, 
+    return {
+      connected: false,
       message: `Connection failed: ${error.message}`,
       url: config.url
     };
@@ -137,7 +141,7 @@ const getTorrents = async () => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/info`, {
       headers: getHeaders(config.url)
     });
@@ -158,7 +162,7 @@ const getTorrentByHash = async (hash) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/info?hashes=${hash}`, {
       headers: getHeaders(config.url)
     });
@@ -180,7 +184,7 @@ const pauseTorrent = async (hash) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/pause`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -197,7 +201,7 @@ const resumeTorrent = async (hash) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/resume`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -214,7 +218,7 @@ const deleteTorrent = async (hash, deleteFiles = false) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/delete`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -231,7 +235,7 @@ const getCategories = async () => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/categories`, {
       headers: getHeaders(config.url)
     });
@@ -252,7 +256,7 @@ const createCategory = async (name, savePath) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/addCategory`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -269,7 +273,7 @@ const setTorrentLocation = async (hash, location) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/setLocation`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -286,7 +290,7 @@ const renameFile = async (hash, filePath, newName) => {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    
+
     const response = await fetch(`${apiBase}/torrents/renameFile`, {
       method: 'POST',
       headers: getHeaders(config.url),
@@ -295,6 +299,123 @@ const renameFile = async (hash, filePath, newName) => {
     return { success: response.ok };
   } catch (error) {
     return { success: false, message: error.message };
+  }
+};
+
+/**
+ * Map qBittorrent torrent states to our internal status
+ * @param {string} state - qBittorrent torrent state
+ * @returns {string} - Internal status: PENDING, DOWNLOADING, DOWNLOADED, FAILED
+ */
+const mapQbitStateToStatus = (state) => {
+  const downloadingStates = ['downloading', 'metaDL', 'forcedDL', 'stalledDL', 'checkingDL', 'checkingResumeData'];
+  const completedStates = ['uploading', 'stalledUP', 'forcedUP', 'checkingUP', 'pausedUP'];
+  const errorStates = ['error', 'missingFiles', 'unknown'];
+
+  if (downloadingStates.includes(state)) return 'DOWNLOADING';
+  if (completedStates.includes(state)) return 'DOWNLOADED';
+  if (errorStates.includes(state)) return 'FAILED';
+  return 'PENDING';
+};
+
+/**
+ * Sync download statuses from qBittorrent to our database
+ * Updates progress, status, and file paths for active downloads
+ */
+const syncDownloadStatuses = async () => {
+  try {
+    // Get status ID mapping from database
+    const statusRows = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
+    const statusIdMap = {};
+    for (const row of statusRows) {
+      statusIdMap[row.name] = row.id;
+    }
+
+    // Get all downloads that are not in final states
+    const pendingDownloads = await db.select()
+      .from(downloads)
+      .where(inArray(downloads.downloadStatusId, [statusIdMap['PENDING'], statusIdMap['DOWNLOADING']]));
+
+    if (pendingDownloads.length === 0) {
+      return { synced: 0 };
+    }
+
+    // Get torrent info from qBittorrent
+    const torrents = await getTorrents();
+    if (!torrents || torrents.length === 0) {
+      logger.info('No torrents found in qBittorrent');
+      return { synced: 0 };
+    }
+
+    // Create a map of torrent hash to torrent info
+    const torrentMap = new Map(torrents.map(t => [t.hash.toLowerCase(), t]));
+
+    let syncedCount = 0;
+    const now = new Date();
+
+    for (const download of pendingDownloads) {
+      const torrent = torrentMap.get(download.torrentHash?.toLowerCase());
+
+      if (!torrent) {
+        // Torrent no longer exists in qBittorrent - might have been deleted
+        // Keep status as is, or mark as FAILED if we want to be strict
+        logger.warn({ downloadId: download.id, torrentHash: download.torrentHash }, 'Torrent not found in qBittorrent');
+        continue;
+      }
+
+      const newStatusName = mapQbitStateToStatus(torrent.state);
+      const newStatusId = statusIdMap[newStatusName];
+      const progress = Math.round((torrent.progress || 0) * 100 * 100) / 100; // Round to 2 decimal places
+      const filePath = torrent.content_path || torrent.save_path || null;
+
+      // Only update if something changed
+      if (download.downloadStatusId !== newStatusId ||
+        download.progress !== progress ||
+        download.filePath !== filePath) {
+
+        await db.update(downloads)
+          .set({
+            downloadStatusId: newStatusId,
+            progress: progress.toString(),
+            filePath: filePath,
+            size: torrent.size || download.size,
+            updatedAt: now
+          })
+          .where(eq(downloads.id, download.id));
+
+        // Update episode status when download state changes
+        if (download.seriesEpisodeId && newStatusId) {
+          const episodeUpdates = {
+            downloadStatusId: newStatusId,
+            updatedAt: now
+          };
+
+          // Additional fields based on status
+          if (newStatusName === 'DOWNLOADED') {
+            episodeUpdates.hasFile = true;
+            episodeUpdates.downloadedAt = now;
+          }
+
+          await db.update(seriesEpisodes)
+            .set(episodeUpdates)
+            .where(eq(seriesEpisodes.id, download.seriesEpisodeId));
+        }
+
+        syncedCount++;
+        logger.debug({
+          downloadId: download.id,
+          oldStatusId: download.downloadStatusId,
+          newStatusId,
+          progress
+        }, 'Download status synced');
+      }
+    }
+
+    logger.info({ syncedCount, total: pendingDownloads.length }, 'Download status sync complete');
+    return { synced: syncedCount };
+  } catch (error) {
+    logger.error({ error: error.message }, 'Error syncing download statuses');
+    return { synced: 0, error: error.message };
   }
 };
 
@@ -310,5 +431,7 @@ module.exports = {
   createCategory,
   setTorrentLocation,
   renameFile,
-  login
+  login,
+  syncDownloadStatuses,
+  mapQbitStateToStatus
 };

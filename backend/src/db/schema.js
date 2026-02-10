@@ -1,5 +1,34 @@
 const { pgTable, serial, text, varchar, boolean, timestamp, integer, jsonb, index, bigint, numeric, foreignKey } = require('drizzle-orm/pg-core');
 
+// Reference table for download statuses
+const downloadStatus = pgTable('download_status', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 50 }).notNull().unique(),
+  label: varchar('label', { length: 50 }).notNull(),
+  description: text('description'),
+  sortOrder: integer('sort_order').default(0),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_download_status_name').on(table.name),
+  index('idx_download_status_sort').on(table.sortOrder),
+]);
+
+// Reference table for RSS templates
+const rssTemplate = pgTable('rss_template', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 50 }).notNull().unique(),
+  label: varchar('label', { length: 50 }).notNull(),
+  description: text('description'),
+  parser: varchar('parser', { length: 50 }),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_rss_template_name').on(table.name),
+]);
+
 const settings = pgTable('settings', {
   id: serial('id').primaryKey(),
   key: varchar('key', { length: 255 }).notNull().unique(),
@@ -16,7 +45,7 @@ const rss = pgTable('rss', {
   name: varchar('name').notNull(),
   description: text('description'),
   url: varchar('url').notNull(),
-  templateId: integer('template_id').default(0),
+  templateId: integer('template_id').references(() => rssTemplate.id, { onDelete: 'set null' }),
   isEnabled: boolean('is_enabled').default(true),
   lastFetchedAt: timestamp('last_fetched_at'),
   refreshInterval: varchar('refresh_interval').default('1h'),
@@ -105,8 +134,9 @@ const series = pgTable('series', {
   ratingVotes: integer('rating_votes'),
   monitored: boolean('monitored').default(true),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
-  downloadStatus: integer('download_status').default(0),
+  downloadStatusId: integer('download_status_id').references(() => downloadStatus.id, { onDelete: 'set null' }),
   rssConfigId: integer('rss_config_id').references(() => rssConfig.id, { onDelete: 'set null' }),
+  path: text('path'),
   lastSyncedAt: timestamp('last_synced_at').defaultNow(),
   rawData: jsonb('raw_data'),
   createdAt: timestamp('created_at').defaultNow(),
@@ -127,7 +157,7 @@ const downloads = pgTable('downloads', {
   seriesEpisodeId: integer('series_episode_id').references(() => seriesEpisodes.id, { onDelete: 'set null' }),
   rssItemId: integer('rss_item_id').references(() => rssItem.id, { onDelete: 'set null' }),
   category: varchar('category'),
-  status: varchar('status').default('PENDING'), // PENDING, DOWNLOADING, DOWNLOADED, FAILED, MOVED
+  downloadStatusId: integer('download_status_id').references(() => downloadStatus.id, { onDelete: 'set null' }),
   name: varchar('name'),
   size: bigint('size', { mode: 'number' }),
   progress: numeric('progress', { precision: 5, scale: 2 }).default('0'),
@@ -135,7 +165,7 @@ const downloads = pgTable('downloads', {
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
-  index('idx_downloads_status').on(table.status),
+  index('idx_downloads_status').on(table.downloadStatusId),
   index('idx_downloads_hash').on(table.torrentHash),
   index('idx_downloads_episode').on(table.seriesEpisodeId),
   index('idx_downloads_rss_item').on(table.rssItemId),
@@ -179,7 +209,7 @@ const seriesSeasons = pgTable('series_seasons', {
   nextAiring: timestamp('next_airing'),
   previousAiring: timestamp('previous_airing'),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
-  autoDownloadStatus: integer('auto_download_status').default(0),
+  downloadStatusId: integer('download_status_id').references(() => downloadStatus.id, { onDelete: 'set null' }),
   rssConfigId: integer('rss_config_id').references(() => rssConfig.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -207,7 +237,7 @@ const seriesEpisodes = pgTable('series_episodes', {
 
   // AutoAnime-specific tracking
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
-  autoDownloadStatus: integer('auto_download_status').default(0),
+  downloadStatusId: integer('download_status_id').references(() => downloadStatus.id, { onDelete: 'set null' }),
   downloadedAt: timestamp('downloaded_at'),
   rssItemId: integer('rss_item_id').references(() => rssItem.id, { onDelete: 'set null' }),
 
@@ -231,5 +261,7 @@ module.exports = {
   seriesImages,
   seriesAlternateTitles,
   seriesSeasons,
-  seriesEpisodes
+  seriesEpisodes,
+  downloadStatus,
+  rssTemplate
 };

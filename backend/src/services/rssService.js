@@ -1,10 +1,24 @@
 const { db } = require('../db/db');
-const { rss, rssItem } = require('../db/schema');
+const { rss, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, sql, lte, and } = require('drizzle-orm');
 const { getParser } = require('../rss_parsers');
 const { CronExpressionParser } = require('cron-parser');
 
 const ALLOWED_HUMAN_INTERVALS = ['15m', '30m', '1h', '2h', '4h', '8h', '12h', '24h'];
+
+// Cache for download status IDs
+let downloadStatusCache = null;
+
+const getDownloadStatusIds = async () => {
+  if (downloadStatusCache) return downloadStatusCache;
+
+  const statuses = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
+  downloadStatusCache = {};
+  for (const status of statuses) {
+    downloadStatusCache[status.name] = status.id;
+  }
+  return downloadStatusCache;
+};
 
 const parseHumanInterval = (interval) => {
   const match = interval.match(/^(\d+)(m|h)$/);
@@ -245,8 +259,35 @@ const downloadRssItem = async (feedId, itemId) => {
     return { success: false, message: 'No magnet link available for this item' };
   }
 
+  // Get download status IDs
+  const statusIds = await getDownloadStatusIds();
+
   const qbittorrentService = require('./qbittorrentService');
-  return await qbittorrentService.addMagnet(item.magnetLink);
+  const result = await qbittorrentService.addMagnet(item.magnetLink);
+
+  if (result.success) {
+    // Extract torrent hash from magnet link
+    const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
+    const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+
+    // Create download record
+    if (torrentHash) {
+      const now = new Date();
+      await db.insert(downloads).values({
+        torrentHash,
+        magnetLink: item.magnetLink,
+        seriesEpisodeId: null, // Manual download from RSS items page - not linked to an episode
+        rssItemId: item.id,
+        category: 'autoanime',
+        downloadStatusId: statusIds['DOWNLOADING'],
+        name: item.title,
+        createdAt: now,
+        updatedAt: now
+      }).onConflictDoNothing();
+    }
+  }
+
+  return result;
 };
 
 const getOverdueFeeds = async () => {

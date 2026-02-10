@@ -1,5 +1,8 @@
 const rssService = require('../services/rssService');
 const { getAvailableTemplates, getTemplateName } = require('../rss_parsers');
+const { db } = require('../db/db');
+const { rssTemplate } = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const { CronExpressionParser } = require('cron-parser');
 const { logger } = require('../utils/logger');
 
@@ -204,8 +207,22 @@ const downloadRssItem = async (req, res) => {
 
 const getTemplates = async (req, res) => {
   try {
-    const templates = getAvailableTemplates();
-    res.json(templates);
+    // Fetch templates from database
+    const templates = await db.select()
+      .from(rssTemplate)
+      .where(eq(rssTemplate.isActive, true))
+      .orderBy(rssTemplate.name);
+    
+    // Map to format expected by frontend
+    const mappedTemplates = templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      label: t.label,
+      description: t.description,
+      parser: t.parser
+    }));
+    
+    res.json(mappedTemplates);
   } catch (error) {
     logger.error({ error }, 'Error fetching templates');
     res.status(500).json({ error: 'Failed to fetch templates' });
