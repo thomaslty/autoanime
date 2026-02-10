@@ -21,5 +21,6 @@ router.put('/series/:id/rss-config', rssConfigController.assignToSeries);
 router.put('/series/:id/seasons/:seasonNumber/rss-config', rssConfigController.assignToSeason);
 router.put('/episodes/:episodeId/rss-item', sonarrController.updateEpisodeRssItem);
 router.post('/episodes/:episodeId/download', sonarrController.downloadEpisode);
+router.delete('/series/:id', sonarrController.deleteSeries);
 
 module.exports = router;

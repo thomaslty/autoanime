@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
-import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown, Eye } from "lucide-react"
+import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown, Eye, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -67,6 +67,8 @@ export function SeriesDetailPage() {
   const [showApplyConfirm, setShowApplyConfirm] = useState(false)
   const [updatingEpisodeIds, setUpdatingEpisodeIds] = useState(new Set())
   const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingSeries, setDeletingSeries] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -394,6 +396,24 @@ export function SeriesDetailPage() {
     setShowPreviewModal(true)
   }
 
+  const handleDeleteSeries = async () => {
+    setDeletingSeries(true)
+    try {
+      const response = await fetch(`/api/sonarr/series/${id}`, {
+        method: "DELETE"
+      })
+      if (!response.ok) {
+        throw new Error("Failed to delete series")
+      }
+      navigate("/")
+    } catch (err) {
+      console.error("Error deleting series:", err)
+    } finally {
+      setDeletingSeries(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   useEffect(() => {
     if (showPreviewModal) {
       fetchPreviewData()
@@ -528,6 +548,10 @@ export function SeriesDetailPage() {
                     <DropdownMenuItem onClick={openPreviewModal}>
                       <Eye size={16} className="mr-2" />
                       Configure RSS Matches
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive focus:text-destructive">
+                      <Trash2 size={16} className="mr-2 text-destructive" />
+                      Delete Series
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -925,7 +949,7 @@ export function SeriesDetailPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleResetRssMatches} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction onClick={handleResetRssMatches} variant="destructive">
               Reset
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -944,6 +968,23 @@ export function SeriesDetailPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleApplyMatches}>
               Apply
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Series</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{series?.title}"? This will permanently remove the series and all related data including episodes, seasons, downloads, and metadata. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSeries} disabled={deletingSeries} variant="destructive">
+              {deletingSeries ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

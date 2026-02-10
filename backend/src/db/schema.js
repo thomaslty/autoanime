@@ -92,13 +92,10 @@ const rssConfig = pgTable('rss_config', {
   index('idx_rss_config_rss_source').on(table.rssSourceId),
 ]);
 
-const series = pgTable('series', {
+const seriesMetadata = pgTable('series_metadata', {
   id: serial('id').primaryKey(),
-  sonarrId: integer('sonarr_id').notNull().unique(),
-  title: text('title').notNull(),
+  seriesId: integer('series_id').notNull().references(() => series.id, { onDelete: 'cascade' }).unique(),
   titleSlug: varchar('title_slug'),
-  overview: text('overview'),
-  posterPath: varchar('poster_path'),
   bannerPath: varchar('banner_path'),
   fanartPath: varchar('fanart_path'),
   clearlogoPath: varchar('clearlogo_path'),
@@ -121,33 +118,45 @@ const series = pgTable('series', {
   previousAiring: timestamp('previous_airing'),
   addedAt: timestamp('added_at'),
   showType: varchar('show_type'),
-  status: varchar('status'),
   profileId: integer('profile_id'),
   languageProfileId: integer('language_profile_id'),
-  seasonCount: integer('season_count'),
   episodeCount: integer('episode_count'),
-  totalEpisodeCount: integer('total_episode_count'),
-  episodeFileCount: integer('episode_file_count'),
   sizeOnDisk: bigint('size_on_disk', { mode: 'number' }),
   percentOfEpisodes: numeric('percent_of_episodes', { precision: 5, scale: 2 }),
   ratingValue: numeric('rating_value', { precision: 3, scale: 1 }),
   ratingVotes: integer('rating_votes'),
+  rawData: jsonb('raw_data'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_series_metadata_series').on(table.seriesId),
+  index('idx_series_metadata_imdb').on(table.imdbId),
+  index('idx_series_metadata_tmdb').on(table.tmdbId),
+  index('idx_series_metadata_tvdb').on(table.tvdbId),
+]);
+
+const series = pgTable('series', {
+  id: serial('id').primaryKey(),
+  sonarrId: integer('sonarr_id').notNull().unique(),
+  title: text('title').notNull(),
+  overview: text('overview'),
+  posterPath: varchar('poster_path'),
+  status: varchar('status'),
+  seasonCount: integer('season_count'),
+  totalEpisodeCount: integer('total_episode_count'),
+  episodeFileCount: integer('episode_file_count'),
   monitored: boolean('monitored').default(true),
   isAutoDownloadEnabled: boolean('is_auto_download_enabled').default(false),
   downloadStatusId: integer('download_status_id').references(() => downloadStatus.id, { onDelete: 'set null' }),
   rssConfigId: integer('rss_config_id').references(() => rssConfig.id, { onDelete: 'set null' }),
   path: text('path'),
   lastSyncedAt: timestamp('last_synced_at').defaultNow(),
-  rawData: jsonb('raw_data'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
   index('idx_series_title').on(table.title),
   index('idx_series_status').on(table.status),
   index('idx_series_last_synced').on(table.lastSyncedAt),
-  index('idx_series_imdb').on(table.imdbId),
-  index('idx_series_tmdb').on(table.tmdbId),
-  index('idx_series_tvdb').on(table.tvdbId),
 ]);
 
 const downloads = pgTable('downloads', {
@@ -252,6 +261,7 @@ const seriesEpisodes = pgTable('series_episodes', {
 
 module.exports = {
   series,
+  seriesMetadata,
   rss,
   rssItem,
   rssConfig,

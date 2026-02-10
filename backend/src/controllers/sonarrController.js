@@ -1,6 +1,6 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
-const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
+const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
 
 const extractImageUrl = (images, coverType) => {
@@ -160,16 +160,15 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
   }
 };
 
-const getSeriesData = (item, now) => {
+const upsertSeriesMetadata = async (seriesId, item, now) => {
   const stats = item.statistics || {};
   const ratings = item.ratings || {};
 
-  return {
-    sonarrId: item.id,
-    title: item.title,
+  const existing = await db.select().from(seriesMetadata).where(eq(seriesMetadata.seriesId, seriesId));
+
+  const metadataData = {
+    seriesId,
     titleSlug: item.titleSlug,
-    overview: item.overview,
-    posterPath: extractImageUrl(item.images, 'poster'),
     bannerPath: extractImageUrl(item.images, 'banner'),
     fanartPath: extractImageUrl(item.images, 'fanart'),
     clearlogoPath: extractImageUrl(item.images, 'clearlogo'),
@@ -192,21 +191,64 @@ const getSeriesData = (item, now) => {
     previousAiring: parseTimestamp(item.previousAiring),
     addedAt: parseTimestamp(item.added),
     showType: item.showType,
-    status: item.status,
     profileId: item.profileId,
     languageProfileId: item.languageProfileId,
-    seasonCount: stats.seasonCount,
     episodeCount: stats.episodeCount,
-    totalEpisodeCount: stats.totalEpisodeCount,
-    episodeFileCount: stats.episodeFileCount,
     sizeOnDisk: stats.sizeOnDisk,
     percentOfEpisodes: stats.percentOfEpisodes,
     ratingValue: ratings.value,
     ratingVotes: ratings.votes,
+    rawData: item,
+    updatedAt: now
+  };
+
+  if (existing.length > 0) {
+    await db.update(seriesMetadata)
+      .set(metadataData)
+      .where(eq(seriesMetadata.id, existing[0].id));
+  } else {
+    await db.insert(seriesMetadata).values({
+      ...metadataData,
+      createdAt: now
+    });
+  }
+};
+
+const getSeriesCoreData = (item, now) => {
+  const stats = item.statistics || {};
+
+  return {
+    sonarrId: item.id,
+    title: item.title,
+    overview: item.overview,
+    posterPath: extractImageUrl(item.images, 'poster'),
+    status: item.status,
+    seasonCount: stats.seasonCount,
+    totalEpisodeCount: stats.totalEpisodeCount,
+    episodeFileCount: stats.episodeFileCount,
     monitored: item.monitored,
     path: item.path,
     lastSyncedAt: now,
-    rawData: item,
+    updatedAt: now
+  };
+};
+
+const getSeriesData = (item, now) => {
+  const stats = item.statistics || {};
+  const ratings = item.ratings || {};
+
+  return {
+    sonarrId: item.id,
+    title: item.title,
+    overview: item.overview,
+    posterPath: extractImageUrl(item.images, 'poster'),
+    status: item.status,
+    seasonCount: stats.seasonCount,
+    totalEpisodeCount: stats.totalEpisodeCount,
+    episodeFileCount: stats.episodeFileCount,
+    monitored: item.monitored,
+    path: item.path,
+    lastSyncedAt: now,
     updatedAt: now
   };
 };
@@ -239,7 +281,8 @@ const getSeriesById = async (req, res) => {
       return res.status(404).json({ error: 'Series not found' });
     }
 
-    const [images, alternateTitles, seasons, episodes] = await Promise.all([
+    const [metadata, images, alternateTitles, seasons, episodes] = await Promise.all([
+      db.select().from(seriesMetadata).where(eq(seriesMetadata.seriesId, parseInt(id))),
       db.select().from(seriesImages).where(eq(seriesImages.seriesId, parseInt(id))),
       db.select().from(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, parseInt(id))),
       db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, parseInt(id))),
@@ -248,6 +291,7 @@ const getSeriesById = async (req, res) => {
 
     res.json({
       ...seriesResult[0],
+      metadata: metadata[0] || null,
       images,
       alternateTitles,
       seasons,
@@ -266,7 +310,7 @@ const syncSeries = async (req, res) => {
 
     for (const item of sonarrData) {
       const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
-      const seriesData = getSeriesData(item, now);
+      const seriesData = getSeriesCoreData(item, now);
 
       let seriesId;
       if (existing.length > 0) {
@@ -280,6 +324,7 @@ const syncSeries = async (req, res) => {
       }
 
       await Promise.all([
+        upsertSeriesMetadata(seriesId, item, now),
         upsertSeriesImages(seriesId, item.images, now),
         upsertAlternateTitles(seriesId, item.alternateTitles, now),
         upsertSeasons(seriesId, item.seasons, now)
@@ -605,6 +650,27 @@ const downloadEpisode = async (req, res) => {
   }
 };
 
+const deleteSeries = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const seriesId = parseInt(id);
+
+    const seriesResult = await db.select().from(series).where(eq(series.id, seriesId));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    await db.delete(downloads).where(eq(downloads.seriesEpisodeId, seriesId));
+
+    await db.delete(series).where(eq(series.id, seriesId));
+
+    res.json({ success: true, message: 'Series and all related records deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting series:', error);
+    res.status(500).json({ error: 'Failed to delete series' });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
@@ -619,5 +685,6 @@ module.exports = {
   getSeriesAutoDownloadStatus,
   resetRssMatches,
   updateEpisodeRssItem,
-  downloadEpisode
+  downloadEpisode,
+  deleteSeries
 };

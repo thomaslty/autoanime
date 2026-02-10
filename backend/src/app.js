@@ -10,7 +10,7 @@ const { startScheduler } = require('./services/rssSchedulerService');
 const { startDownloadSyncScheduler } = require('./services/downloadSyncSchedulerService');
 const { seedReferenceTables } = require('./db/seed');
 const { db } = require('./db/db');
-const { series, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
+const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
 const { eq, and } = require('drizzle-orm');
 const { logger } = require('./utils/logger');
 
@@ -208,16 +208,15 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
   }
 };
 
-const getSeriesData = (item, now) => {
+const upsertSeriesMetadata = async (seriesId, item, now) => {
   const stats = item.statistics || {};
   const ratings = item.ratings || {};
-  
-  return {
-    sonarrId: item.id,
-    title: item.title,
+
+  const existing = await db.select().from(seriesMetadata).where(eq(seriesMetadata.seriesId, seriesId));
+
+  const metadataData = {
+    seriesId,
     titleSlug: item.titleSlug,
-    overview: item.overview,
-    posterPath: extractImageUrl(item.images, 'poster'),
     bannerPath: extractImageUrl(item.images, 'banner'),
     fanartPath: extractImageUrl(item.images, 'fanart'),
     clearlogoPath: extractImageUrl(item.images, 'clearlogo'),
@@ -240,20 +239,43 @@ const getSeriesData = (item, now) => {
     previousAiring: parseTimestamp(item.previousAiring),
     addedAt: parseTimestamp(item.added),
     showType: item.showType,
-    status: item.status,
     profileId: item.profileId,
     languageProfileId: item.languageProfileId,
-    seasonCount: stats.seasonCount,
     episodeCount: stats.episodeCount,
-    totalEpisodeCount: stats.totalEpisodeCount,
-    episodeFileCount: stats.episodeFileCount,
     sizeOnDisk: stats.sizeOnDisk,
     percentOfEpisodes: stats.percentOfEpisodes,
     ratingValue: ratings.value,
     ratingVotes: ratings.votes,
+    rawData: item,
+    updatedAt: now
+  };
+
+  if (existing.length > 0) {
+    await db.update(seriesMetadata)
+      .set(metadataData)
+      .where(eq(seriesMetadata.id, existing[0].id));
+  } else {
+    await db.insert(seriesMetadata).values({
+      ...metadataData,
+      createdAt: now
+    });
+  }
+};
+
+const getSeriesCoreData = (item, now) => {
+  const stats = item.statistics || {};
+
+  return {
+    sonarrId: item.id,
+    title: item.title,
+    overview: item.overview,
+    posterPath: extractImageUrl(item.images, 'poster'),
+    status: item.status,
+    seasonCount: stats.seasonCount,
+    totalEpisodeCount: stats.totalEpisodeCount,
+    episodeFileCount: stats.episodeFileCount,
     monitored: item.monitored,
     lastSyncedAt: now,
-    rawData: item,
     updatedAt: now
   };
 };
@@ -266,7 +288,7 @@ const syncOnStartup = async () => {
 
     for (const item of sonarrData) {
       const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
-      const seriesData = getSeriesData(item, now);
+      const seriesData = getSeriesCoreData(item, now);
 
       let seriesId;
       if (existing.length > 0) {
@@ -280,6 +302,7 @@ const syncOnStartup = async () => {
       }
 
       await Promise.all([
+        upsertSeriesMetadata(seriesId, item, now),
         upsertSeriesImages(seriesId, item.images, now),
         upsertAlternateTitles(seriesId, item.alternateTitles, now),
         upsertSeasons(seriesId, item.seasons, now)
