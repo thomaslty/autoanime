@@ -1,6 +1,8 @@
+const fs = require('fs');
+const path = require('path');
 const configService = require('./configService');
 const { db } = require('../db/db');
-const { downloads, seriesEpisodes, downloadStatus } = require('../db/schema');
+const { downloads, seriesEpisodes, series, downloadStatus } = require('../db/schema');
 const { eq, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 
@@ -110,15 +112,39 @@ const getConnectionStatus = async () => {
   }
 };
 
-const addMagnet = async (magnet, category = 'autoanime') => {
+let categoryEnsured = false;
+
+/**
+ * Ensure the download category exists in qBittorrent with the configured save path.
+ * Called once before the first download.
+ */
+const ensureCategory = async () => {
+  if (categoryEnsured) return;
+  try {
+    const config = await getQbitConfig();
+    const categoryName = config.category || 'autoanime';
+    const savePath = config.categorySavePath || '/downloads/autoanime';
+    await createCategory(categoryName, savePath);
+    categoryEnsured = true;
+    logger.info({ category: categoryName, savePath }, 'qBittorrent category ensured');
+  } catch (error) {
+    logger.error({ error: error.message }, 'Failed to ensure qBittorrent category');
+  }
+};
+
+const addMagnet = async (magnet, category) => {
   try {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
+    const categoryName = category || config.category || 'autoanime';
+
+    // Ensure category exists before first download
+    await ensureCategory();
 
     const formData = new URLSearchParams();
     formData.append('urls', magnet);
-    formData.append('category', category);
+    formData.append('category', categoryName);
 
     const response = await fetch(`${apiBase}/torrents/add`, {
       method: 'POST',
@@ -152,7 +178,7 @@ const getTorrents = async () => {
 
     return await response.json();
   } catch (error) {
-    console.error('Error fetching torrents:', error);
+    logger.error({ error: error.message }, 'Error fetching torrents');
     return [];
   }
 };
@@ -174,7 +200,7 @@ const getTorrentByHash = async (hash) => {
     const torrents = await response.json();
     return torrents.length > 0 ? torrents[0] : null;
   } catch (error) {
-    console.error('Error fetching torrent:', error);
+    logger.error({ error: error.message }, 'Error fetching torrent');
     return null;
   }
 };
@@ -246,7 +272,7 @@ const getCategories = async () => {
 
     return await response.json();
   } catch (error) {
-    console.error('Error fetching categories:', error);
+    logger.error({ error: error.message }, 'Error fetching categories');
     return [];
   }
 };
@@ -322,6 +348,115 @@ const mapQbitStateToStatus = (state) => {
  * Sync download statuses from qBittorrent to our database
  * Updates progress, status, and file paths for active downloads
  */
+/**
+ * Copy downloaded file from qBittorrent download path to the anime media folder
+ * and rename to S0XE0X format.
+ */
+const copyDownloadedFile = async (download, filePath) => {
+  try {
+    if (!download.seriesEpisodeId || !filePath) return;
+
+    const mediaPath = process.env.MEDIA_PATH;
+    const qbitPath = process.env.QBITTORRENT_PATH;
+
+    if (!mediaPath || !qbitPath) {
+      logger.warn('MEDIA_PATH or QBITTORRENT_PATH env not set, skipping file copy');
+      return;
+    }
+
+    // Get episode and series info
+    const episodeData = await db.select({
+      episodeNumber: seriesEpisodes.episodeNumber,
+      seasonNumber: seriesEpisodes.seasonNumber,
+      seriesId: seriesEpisodes.seriesId,
+    })
+      .from(seriesEpisodes)
+      .where(eq(seriesEpisodes.id, download.seriesEpisodeId))
+      .limit(1);
+
+    if (!episodeData[0]) return;
+
+    const ep = episodeData[0];
+
+    const seriesData = await db.select({ path: series.path })
+      .from(series)
+      .where(eq(series.id, ep.seriesId))
+      .limit(1);
+
+    if (!seriesData[0] || !seriesData[0].path) {
+      logger.warn({ seriesId: ep.seriesId }, 'Series has no path, skipping file copy');
+      return;
+    }
+
+    // Resolve source file path (qBittorrent download location)
+    // filePath from qBit is the content_path (full path to the file/folder on qBit's filesystem)
+    // We need to map it to our local filesystem using QBITTORRENT_PATH
+    const sourcePath = filePath;
+
+    // Resolve destination path
+    // Sonarr path example: /media/Frieren - Beyond Journey's End
+    // We map it: replace the sonarr root with MEDIA_PATH
+    const sonarrPath = seriesData[0].path;
+    // Extract the series folder name from the sonarr path (last segment)
+    const seriesFolder = path.basename(sonarrPath);
+    const seasonFolder = `Season ${String(ep.seasonNumber).padStart(2, '0')}`;
+    const destDir = path.join(mediaPath, seriesFolder, seasonFolder);
+
+    // Build the episode filename: S01E05.ext
+    const sourceExt = path.extname(sourcePath) || '.mkv';
+    const episodeFilename = `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}${sourceExt}`;
+    const destPath = path.join(destDir, episodeFilename);
+
+    // Ensure destination directory exists
+    await fs.promises.mkdir(destDir, { recursive: true });
+
+    // Check if source exists on disk
+    // The filePath from qBit is the path inside qBit's filesystem.
+    // We need to resolve it relative to QBITTORRENT_PATH
+    let actualSourcePath = sourcePath;
+
+    // If source is a directory (multi-file torrent), find the largest file
+    try {
+      const stat = await fs.promises.stat(actualSourcePath);
+      if (stat.isDirectory()) {
+        const files = await fs.promises.readdir(actualSourcePath);
+        const videoExts = ['.mkv', '.mp4', '.avi', '.wmv', '.flv', '.webm'];
+        let largestFile = null;
+        let largestSize = 0;
+        for (const file of files) {
+          const ext = path.extname(file).toLowerCase();
+          if (videoExts.includes(ext)) {
+            const fileStat = await fs.promises.stat(path.join(actualSourcePath, file));
+            if (fileStat.size > largestSize) {
+              largestSize = fileStat.size;
+              largestFile = file;
+            }
+          }
+        }
+        if (largestFile) {
+          actualSourcePath = path.join(actualSourcePath, largestFile);
+          // Update the extension based on the actual file
+          const actualExt = path.extname(largestFile);
+          const correctedFilename = `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}${actualExt}`;
+          const correctedDestPath = path.join(destDir, correctedFilename);
+          await fs.promises.copyFile(actualSourcePath, correctedDestPath);
+          logger.info({ source: actualSourcePath, dest: correctedDestPath }, 'Copied downloaded file to media folder');
+          return;
+        }
+      }
+    } catch (statError) {
+      logger.warn({ path: actualSourcePath, error: statError.message }, 'Cannot stat source path, skipping file copy');
+      return;
+    }
+
+    // Copy single file
+    await fs.promises.copyFile(actualSourcePath, destPath);
+    logger.info({ source: actualSourcePath, dest: destPath }, 'Copied downloaded file to media folder');
+  } catch (error) {
+    logger.error({ downloadId: download.id, error: error.message }, 'Error copying downloaded file');
+  }
+};
+
 const syncDownloadStatuses = async () => {
   try {
     // Get status ID mapping from database
@@ -342,13 +477,12 @@ const syncDownloadStatuses = async () => {
 
     // Get torrent info from qBittorrent
     const torrents = await getTorrents();
-    if (!torrents || torrents.length === 0) {
-      logger.info('No torrents found in qBittorrent');
-      return { synced: 0 };
+    const torrentMap = new Map();
+    if (torrents && torrents.length > 0) {
+      for (const t of torrents) {
+        torrentMap.set(t.hash.toLowerCase(), t);
+      }
     }
-
-    // Create a map of torrent hash to torrent info
-    const torrentMap = new Map(torrents.map(t => [t.hash.toLowerCase(), t]));
 
     let syncedCount = 0;
     const now = new Date();
@@ -356,16 +490,32 @@ const syncDownloadStatuses = async () => {
     for (const download of pendingDownloads) {
       const torrent = torrentMap.get(download.torrentHash?.toLowerCase());
 
-      if (!torrent) {
-        // Torrent no longer exists in qBittorrent - might have been deleted
-        // Keep status as is, or mark as FAILED if we want to be strict
-        logger.warn({ downloadId: download.id, torrentHash: download.torrentHash }, 'Torrent not found in qBittorrent');
-        continue;
-      }
+      // if (!torrent) {
+      //   // Torrent no longer exists in qBittorrent
+      //   // If the download was not yet finished, clean up DB records
+      //   logger.warn({ downloadId: download.id, torrentHash: download.torrentHash }, 'Torrent not found in qBittorrent, cleaning up');
+
+      //   // Delete the download record
+      //   await db.delete(downloads).where(eq(downloads.id, download.id));
+
+      //   // Reset the episode download status (but keep the RSS match)
+      //   if (download.seriesEpisodeId) {
+      //     await db.update(seriesEpisodes)
+      //       .set({
+      //         downloadStatusId: null,
+      //         downloadedAt: null,
+      //         updatedAt: now
+      //       })
+      //       .where(eq(seriesEpisodes.id, download.seriesEpisodeId));
+      //   }
+
+      //   syncedCount++;
+      //   continue;
+      // }
 
       const newStatusName = mapQbitStateToStatus(torrent.state);
       const newStatusId = statusIdMap[newStatusName];
-      const progress = Math.round((torrent.progress || 0) * 100 * 100) / 100; // Round to 2 decimal places
+      const progress = Math.round((torrent.progress || 0) * 100 * 100) / 100;
       const filePath = torrent.content_path || torrent.save_path || null;
 
       // Only update if something changed
@@ -390,10 +540,14 @@ const syncDownloadStatuses = async () => {
             updatedAt: now
           };
 
-          // Additional fields based on status
           if (newStatusName === 'DOWNLOADED') {
             episodeUpdates.hasFile = true;
             episodeUpdates.downloadedAt = now;
+
+            // Copy file from qBit download path to media folder
+            // TODO: for local testing, we will not copy the file, but just log the file path.
+            logger.info({ filePath }, 'Downloaded file path');
+            // await copyDownloadedFile(download, filePath);
           }
 
           await db.update(seriesEpisodes)
@@ -411,7 +565,9 @@ const syncDownloadStatuses = async () => {
       }
     }
 
-    logger.info({ syncedCount, total: pendingDownloads.length }, 'Download status sync complete');
+    if (syncedCount > 0) {
+      logger.info({ syncedCount, total: pendingDownloads.length }, 'Download status sync complete');
+    }
     return { synced: syncedCount };
   } catch (error) {
     logger.error({ error: error.message }, 'Error syncing download statuses');
@@ -429,6 +585,7 @@ module.exports = {
   deleteTorrent,
   getCategories,
   createCategory,
+  ensureCategory,
   setTorrentLocation,
   renameFile,
   login,

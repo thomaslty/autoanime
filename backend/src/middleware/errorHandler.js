@@ -1,4 +1,5 @@
 // Centralized error handling middleware
+const { logger } = require('../utils/logger');
 
 class AppError extends Error {
   constructor(message, statusCode) {
@@ -13,12 +14,12 @@ const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal server error';
 
-  console.error(`[${new Date().toISOString()}] Error:`, {
+  logger.error({
     message: err.message,
     stack: err.stack,
     path: req.path,
     method: req.method
-  });
+  }, 'Request error');
 
   res.status(statusCode).json({
     error: message,

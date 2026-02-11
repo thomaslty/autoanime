@@ -3,6 +3,7 @@ const { rssConfig, rss, rssItem, series, seriesSeasons, seriesEpisodes, download
 const { eq, and, asc, gt } = require('drizzle-orm');
 const { convertCustomRegexToStandard, calculateEffectiveEpisode, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 const { logger } = require('../utils/logger');
+const { getInfoHash } = require('../utils/magnetHelper');
 
 // Cache for download status IDs
 let downloadStatusCache = null;
@@ -193,8 +194,7 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
           downloadedCount++;
           
           // Extract torrent hash and create download record
-          const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-          const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+          const torrentHash = getInfoHash(item.magnetLink);
           
           if (torrentHash) {
             await db.insert(downloads).values({
@@ -458,8 +458,7 @@ const applySeriesRssPreview = async (seriesId, triggerDownloads = false) => {
                 downloadCount++;
                 
                 // Extract torrent hash and create download record
-                const hashMatch = rssItemData[0].magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-                const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+                const torrentHash = getInfoHash(rssItemData[0].magnetLink);
                 
                 if (torrentHash) {
                   await db.insert(downloads).values({

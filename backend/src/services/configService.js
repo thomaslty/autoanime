@@ -2,6 +2,7 @@ const { db } = require('../db/db');
 const { settings } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const crypto = require('crypto');
+const { logger } = require('../utils/logger');
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
 const ALGORITHM = 'aes-256-gcm';
@@ -20,7 +21,7 @@ const encrypt = (text) => {
     const authTag = cipher.getAuthTag ? cipher.getAuthTag().toString('hex') : '';
     return `${iv.toString('hex')}:${authTag}:${encrypted}`;
   } catch (error) {
-    console.error('Encryption error:', error.message);
+    logger.error({ error: error.message }, 'Encryption error');
     return text;
   }
 };
@@ -44,7 +45,7 @@ const decrypt = (encryptedText) => {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (error) {
-    console.error('Decryption error:', error.message);
+    logger.error({ error: error.message }, 'Decryption error');
     return encryptedText;
   }
 };
@@ -74,7 +75,7 @@ const getSetting = async (key) => {
     }
     return null;
   } catch (error) {
-    console.error(`Error getting setting ${key}:`, error.message);
+    logger.error({ key, error: error.message }, 'Error getting setting');
     return null;
   }
 };
@@ -116,7 +117,7 @@ const setSetting = async (key, value, shouldEncrypt = null) => {
 
     return { success: true };
   } catch (error) {
-    console.error(`Error setting ${key}:`, error.message);
+    logger.error({ key, error: error.message }, 'Error setting value');
     return { success: false, error: error.message };
   }
 };
@@ -134,7 +135,7 @@ const getAllSettings = async () => {
       updatedAt: setting.updatedAt
     }));
   } catch (error) {
-    console.error('Error getting all settings:', error.message);
+    logger.error({ error: error.message }, 'Error getting all settings');
     return [];
   }
 };
@@ -148,7 +149,9 @@ const getConfig = async () => {
     qbittorrent: {
       url: await getSettingWithFallback('qbittorrent_url', 'QBITTORRENT_URL') || 'http://localhost:8080',
       username: await getSettingWithFallback('qbittorrent_username', 'QBITTORRENT_USERNAME') || 'admin',
-      password: await getSettingWithFallback('qbittorrent_password', 'QBITTORRENT_PASSWORD') || 'adminadmin'
+      password: await getSettingWithFallback('qbittorrent_password', 'QBITTORRENT_PASSWORD') || 'adminadmin',
+      category: await getSetting('qbittorrent_category') || 'autoanime',
+      categorySavePath: await getSetting('qbittorrent_category_save_path') || '/downloads/autoanime'
     }
   };
 };

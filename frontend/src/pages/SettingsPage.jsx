@@ -26,14 +26,18 @@ export function SettingsPage() {
     sonarrApiKey: "",
     qbitUrl: "",
     qbitUsername: "",
-    qbitPassword: ""
+    qbitPassword: "",
+    qbitCategory: "",
+    qbitCategorySavePath: ""
   })
   const [originalConfig, setOriginalConfig] = useState({
     sonarrUrl: "",
     sonarrApiKey: "",
     qbitUrl: "",
     qbitUsername: "",
-    qbitPassword: ""
+    qbitPassword: "",
+    qbitCategory: "",
+    qbitCategorySavePath: ""
   })
 
   useEffect(() => {
@@ -61,7 +65,9 @@ export function SettingsPage() {
           sonarrApiKey: data.config.sonarr.apiKey || "",
           qbitUrl: data.config.qbittorrent.url || "",
           qbitUsername: data.config.qbittorrent.username || "",
-          qbitPassword: data.config.qbittorrent.password || ""
+          qbitPassword: data.config.qbittorrent.password || "",
+          qbitCategory: data.config.qbittorrent.category || "",
+          qbitCategorySavePath: data.config.qbittorrent.categorySavePath || ""
         }
         setConfig(newConfig)
         setOriginalConfig(newConfig)
@@ -143,7 +149,9 @@ export function SettingsPage() {
         body: JSON.stringify({
           url: config.qbitUrl,
           username: config.qbitUsername,
-          password: config.qbitPassword.includes("•") ? undefined : config.qbitPassword
+          password: config.qbitPassword.includes("•") ? undefined : config.qbitPassword,
+          category: config.qbitCategory,
+          categorySavePath: config.qbitCategorySavePath
         })
       })
 
@@ -151,10 +159,12 @@ export function SettingsPage() {
       
       if (data.success) {
         showMessage("success", "qBittorrent configuration saved successfully")
-        setOriginalConfig(prev => ({ 
-          ...prev, 
+        setOriginalConfig(prev => ({
+          ...prev,
           qbitUrl: config.qbitUrl,
-          qbitUsername: config.qbitUsername
+          qbitUsername: config.qbitUsername,
+          qbitCategory: config.qbitCategory,
+          qbitCategorySavePath: config.qbitCategorySavePath
         }))
         fetchHealth()
       } else {
@@ -197,8 +207,10 @@ export function SettingsPage() {
 
   const isSonarrChanged = config.sonarrUrl !== originalConfig.sonarrUrl || 
                          (config.sonarrApiKey && !config.sonarrApiKey.includes("•"))
-  const isQbitChanged = config.qbitUrl !== originalConfig.qbitUrl || 
+  const isQbitChanged = config.qbitUrl !== originalConfig.qbitUrl ||
                         config.qbitUsername !== originalConfig.qbitUsername ||
+                        config.qbitCategory !== originalConfig.qbitCategory ||
+                        config.qbitCategorySavePath !== originalConfig.qbitCategorySavePath ||
                         (config.qbitPassword && !config.qbitPassword.includes("•"))
 
   return (
@@ -380,6 +392,26 @@ export function SettingsPage() {
                   )}
                 </Button>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qbitCategory">Download Category</Label>
+              <Input
+                id="qbitCategory"
+                value={config.qbitCategory}
+                onChange={(e) => setConfig({ ...config, qbitCategory: e.target.value })}
+                placeholder="autoanime"
+              />
+              <p className="text-xs text-muted-foreground">Category name for downloaded torrents</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qbitCategorySavePath">Category Save Path</Label>
+              <Input
+                id="qbitCategorySavePath"
+                value={config.qbitCategorySavePath}
+                onChange={(e) => setConfig({ ...config, qbitCategorySavePath: e.target.value })}
+                placeholder="/downloads/autoanime"
+              />
+              <p className="text-xs text-muted-foreground">Where qBittorrent should save downloads for this category</p>
             </div>
             <div className="flex gap-2 pt-2">
               <Button 

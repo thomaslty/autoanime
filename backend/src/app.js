@@ -6,7 +6,9 @@ const routes = require('./routes');
 const { testConnection } = require('./db/db');
 const sonarrService = require('./services/sonarrService');
 const qbittorrentService = require('./services/qbittorrentService');
-const { startScheduler } = require('./services/rssSchedulerService');
+const { startScheduler: startRssFetchScheduler } = require('./services/rssFetchSchedulerService');
+const { startScheduler: startRssMatchingScheduler } = require('./services/rssMatchingSchedulerService');
+const { startScheduler: startDownloadScheduler } = require('./services/downloadSchedulerService');
 const { startDownloadSyncScheduler } = require('./services/downloadSyncSchedulerService');
 const { seedReferenceTables } = require('./db/seed');
 const { db } = require('./db/db');
@@ -324,7 +326,9 @@ const startServer = async () => {
   } else {
     await seedReferenceTables();
     await syncOnStartup();
-    startScheduler();
+    startRssFetchScheduler();
+    startRssMatchingScheduler();
+    startDownloadScheduler();
     startDownloadSyncScheduler();
   }
 

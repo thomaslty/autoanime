@@ -2,6 +2,8 @@ const qbittorrentService = require('../services/qbittorrentService');
 const { db } = require('../db/db');
 const { downloads, downloadStatus } = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { logger } = require('../utils/logger');
+const { getInfoHash } = require('../utils/magnetHelper');
 
 // Cache for download status IDs
 let downloadStatusCache = null;
@@ -22,7 +24,7 @@ const getStatus = async (req, res) => {
     const status = await qbittorrentService.getConnectionStatus();
     res.json(status);
   } catch (error) {
-    console.error('Error checking qBittorrent status:', error);
+    logger.error({ error: error.message }, 'Error checking qBittorrent status');
     res.status(500).json({ error: 'Failed to check qBittorrent status' });
   }
 };
@@ -32,7 +34,7 @@ const getDownloads = async (req, res) => {
     const downloads = await db.select().from(downloads).orderBy(downloads.createdAt);
     res.json(downloads);
   } catch (error) {
-    console.error('Error fetching downloads:', error);
+    logger.error({ error: error.message },'Error fetching downloads:', error);
     res.status(500).json({ error: 'Failed to fetch downloads' });
   }
 };
@@ -52,8 +54,7 @@ const addMagnet = async (req, res) => {
       return res.status(500).json({ error: result.message });
     }
 
-    const hashMatch = magnet.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-    const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+    const torrentHash = getInfoHash(magnet);
 
     if (torrentHash) {
       const now = new Date();
@@ -71,7 +72,7 @@ const addMagnet = async (req, res) => {
 
     res.json({ success: true, message: 'Torrent added', hash: torrentHash });
   } catch (error) {
-    console.error('Error adding magnet:', error);
+    logger.error({ error: error.message },'Error adding magnet:', error);
     res.status(500).json({ error: 'Failed to add magnet' });
   }
 };
@@ -88,7 +89,7 @@ const pauseTorrent = async (req, res) => {
     }
     res.json(result);
   } catch (error) {
-    console.error('Error pausing torrent:', error);
+    logger.error({ error: error.message },'Error pausing torrent:', error);
     res.status(500).json({ error: 'Failed to pause torrent' });
   }
 };
@@ -105,7 +106,7 @@ const resumeTorrent = async (req, res) => {
     }
     res.json(result);
   } catch (error) {
-    console.error('Error resuming torrent:', error);
+    logger.error({ error: error.message },'Error resuming torrent:', error);
     res.status(500).json({ error: 'Failed to resume torrent' });
   }
 };
@@ -120,7 +121,7 @@ const deleteTorrent = async (req, res) => {
     }
     res.json(result);
   } catch (error) {
-    console.error('Error deleting torrent:', error);
+    logger.error({ error: error.message },'Error deleting torrent:', error);
     res.status(500).json({ error: 'Failed to delete torrent' });
   }
 };
@@ -130,7 +131,7 @@ const getCategories = async (req, res) => {
     const categories = await qbittorrentService.getCategories();
     res.json(categories);
   } catch (error) {
-    console.error('Error fetching categories:', error);
+    logger.error({ error: error.message },'Error fetching categories:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
   }
 };
@@ -171,7 +172,7 @@ const syncDownloads = async (req, res) => {
 
     res.json({ success: true, message: `Synced ${torrents.length} torrents` });
   } catch (error) {
-    console.error('Error syncing downloads:', error);
+    logger.error({ error: error.message },'Error syncing downloads:', error);
     res.status(500).json({ error: 'Failed to sync downloads' });
   }
 };

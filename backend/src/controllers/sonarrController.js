@@ -2,6 +2,7 @@ const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
 const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
+const { logger } = require('../utils/logger');
 
 const extractImageUrl = (images, coverType) => {
   const image = images?.find(img => img.coverType === coverType);
@@ -155,7 +156,7 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
 
     return upsertCount;
   } catch (error) {
-    console.error('Error syncing episodes:', error);
+    logger.error({ error: error.message }, 'Error syncing episodes');
     throw error;
   }
 };
@@ -258,7 +259,7 @@ const getStatus = async (req, res) => {
     const status = await sonarrService.getStatus();
     res.json(status);
   } catch (error) {
-    console.error('Error checking Sonarr status:', error);
+    logger.error({ error: error.message }, 'Error checking Sonarr status');
     res.status(500).json({ error: 'Failed to check Sonarr status' });
   }
 };
@@ -268,7 +269,7 @@ const getSeries = async (req, res) => {
     const allSeries = await db.select().from(series).orderBy(series.title);
     res.json(allSeries);
   } catch (error) {
-    console.error('Error fetching series:', error);
+    logger.error({ error: error.message }, 'Error fetching series');
     res.status(500).json({ error: 'Failed to fetch series' });
   }
 };
@@ -298,7 +299,7 @@ const getSeriesById = async (req, res) => {
       episodes
     });
   } catch (error) {
-    console.error('Error fetching series:', error);
+    logger.error({ error: error.message }, 'Error fetching series');
     res.status(500).json({ error: 'Failed to fetch series' });
   }
 };
@@ -340,7 +341,7 @@ const syncSeries = async (req, res) => {
       syncedAt: now
     });
   } catch (error) {
-    console.error('Error syncing series:', error);
+    logger.error({ error: error.message }, 'Error syncing series');
     res.status(500).json({ error: `Failed to sync series: ${error.message}` });
   }
 };
@@ -358,7 +359,7 @@ const triggerRefresh = async (req, res) => {
     const result = await sonarrService.refreshSeries(seriesResult[0].sonarrId);
     res.json({ success: true, message: 'Refresh triggered', command: result });
   } catch (error) {
-    console.error('Error triggering refresh:', error);
+    logger.error({ error: error.message }, 'Error triggering refresh');
     res.status(500).json({ error: 'Failed to trigger refresh' });
   }
 };
@@ -392,7 +393,7 @@ const getSeriesEpisodes = async (req, res) => {
       episodesBySeason
     });
   } catch (error) {
-    console.error('Error fetching episodes:', error);
+    logger.error({ error: error.message }, 'Error fetching episodes');
     res.status(500).json({ error: 'Failed to fetch episodes' });
   }
 };
@@ -415,7 +416,7 @@ const syncSeriesEpisodes = async (req, res) => {
       syncedAt: now
     });
   } catch (error) {
-    console.error('Error syncing episodes:', error);
+    logger.error({ error: error.message }, 'Error syncing episodes');
     res.status(500).json({ error: `Failed to sync episodes: ${error.message}` });
   }
 };
@@ -439,7 +440,7 @@ const toggleSeriesAutoDownload = async (req, res) => {
       downloadStatus
     });
   } catch (error) {
-    console.error('Error toggling series auto-download:', error);
+    logger.error({ error: error.message }, 'Error toggling series auto-download');
     res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
   }
 };
@@ -470,7 +471,7 @@ const toggleSeasonAutoDownload = async (req, res) => {
       downloadStatus
     });
   } catch (error) {
-    console.error('Error toggling season auto-download:', error);
+    logger.error({ error: error.message }, 'Error toggling season auto-download');
     res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
   }
 };
@@ -492,7 +493,7 @@ const toggleEpisodeAutoDownload = async (req, res) => {
       episode: updatedEpisode
     });
   } catch (error) {
-    console.error('Error toggling episode auto-download:', error);
+    logger.error({ error: error.message }, 'Error toggling episode auto-download');
     res.status(500).json({ error: `Failed to toggle auto-download: ${error.message}` });
   }
 };
@@ -513,7 +514,7 @@ const getSeriesAutoDownloadStatus = async (req, res) => {
       ...downloadStatus
     });
   } catch (error) {
-    console.error('Error getting series auto-download status:', error);
+    logger.error({ error: error.message }, 'Error getting series auto-download status');
     res.status(500).json({ error: `Failed to get auto-download status: ${error.message}` });
   }
 };
@@ -536,7 +537,7 @@ const resetRssMatches = async (req, res) => {
 
     res.json({ success: true, message: 'RSS matches reset successfully' });
   } catch (error) {
-    console.error('Error resetting RSS matches:', error);
+    logger.error({ error: error.message }, 'Error resetting RSS matches');
     res.status(500).json({ error: 'Failed to reset RSS matches' });
   }
 };
@@ -565,7 +566,7 @@ const updateEpisodeRssItem = async (req, res) => {
 
     res.json({ success: true, episode: result[0] });
   } catch (error) {
-    console.error('Error updating episode RSS item:', error);
+    logger.error({ error: error.message }, 'Error updating episode RSS item');
     res.status(500).json({ error: 'Failed to update episode RSS item' });
   }
 };
@@ -573,8 +574,10 @@ const updateEpisodeRssItem = async (req, res) => {
 const downloadEpisode = async (req, res) => {
   try {
     const episodeId = parseInt(req.params.episodeId, 10);
+    logger.info({ episodeId }, '[Manual Download] START');
 
     if (isNaN(episodeId)) {
+      logger.warn('[Manual Download] Invalid episode ID');
       return res.status(400).json({ error: 'Invalid episode ID' });
     }
 
@@ -584,7 +587,8 @@ const downloadEpisode = async (req, res) => {
       seriesId: seriesEpisodes.seriesId,
       rssItemId: seriesEpisodes.rssItemId,
       magnetLink: rssItem.magnetLink,
-      rssTitle: rssItem.title
+      rssTitle: rssItem.title,
+      rssItemDbId: rssItem.id
     })
       .from(seriesEpisodes)
       .leftJoin(rssItem, eq(seriesEpisodes.rssItemId, rssItem.id))
@@ -592,60 +596,52 @@ const downloadEpisode = async (req, res) => {
       .limit(1);
 
     if (episode.length === 0) {
+      logger.warn({ episodeId }, '[Manual Download] Episode not found');
       return res.status(404).json({ error: 'Episode not found' });
     }
 
     const ep = episode[0];
+    logger.info({
+      episodeId: ep.id,
+      seriesId: ep.seriesId,
+      rssItemId: ep.rssItemId,
+      rssItemDbId: ep.rssItemDbId,
+      hasTitle: !!ep.rssTitle,
+      hasMagnetLink: !!ep.magnetLink
+    }, '[Manual Download] Episode data');
 
     if (!ep.rssItemId || !ep.magnetLink) {
+      logger.warn({ episodeId: ep.id }, '[Manual Download] No RSS item or magnet link');
       return res.status(400).json({ error: 'Episode has no RSS item linked or magnet link not available' });
     }
 
-    // Get DOWNLOADING status ID
-    const downloadingStatus = await db.select().from(downloadStatus).where(eq(downloadStatus.name, 'DOWNLOADING')).limit(1);
-    const downloadingStatusId = downloadingStatus[0]?.id;
+    // Use shared download logic
+    const { triggerEpisodeDownload, getDownloadStatusIds } = require('../services/downloadSchedulerService');
+    const statusIds = await getDownloadStatusIds();
+    logger.info({ statusIds }, '[Manual Download] Status IDs');
 
-    // Trigger download via qBittorrent service
-    const qbittorrentService = require('../services/qbittorrentService');
-    const result = await qbittorrentService.addMagnet(ep.magnetLink, 'autoanime');
+    logger.info({
+      episode: { id: ep.id },
+      rssItemData: { id: ep.rssItemDbId, title: ep.rssTitle, hasMagnetLink: !!ep.magnetLink }
+    }, '[Manual Download] Calling triggerEpisodeDownload');
+
+    const result = await triggerEpisodeDownload(
+      { id: ep.id },
+      { id: ep.rssItemDbId, magnetLink: ep.magnetLink, title: ep.rssTitle },
+      statusIds
+    );
+
+    logger.info({ result }, '[Manual Download] triggerEpisodeDownload result');
 
     if (!result.success) {
-      return res.status(500).json({ error: result.message || 'Failed to add torrent to qBittorrent' });
+      logger.error({ episodeId: ep.id, error: result.message }, '[Manual Download] triggerEpisodeDownload failed');
+      return res.status(500).json({ error: result.message });
     }
 
-    // Extract torrent hash
-    const hashMatch = ep.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-    const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
-
-    const now = new Date();
-
-    // Update episode status
-    await db.update(seriesEpisodes)
-      .set({
-        downloadedAt: now,
-        downloadStatusId: downloadingStatusId,
-        updatedAt: now
-      })
-      .where(eq(seriesEpisodes.id, ep.id));
-
-    // Save download record
-    if (torrentHash) {
-      await db.insert(downloads).values({
-        torrentHash,
-        magnetLink: ep.magnetLink,
-        seriesEpisodeId: ep.id,
-        rssItemId: ep.rssItemId,
-        category: 'autoanime',
-        downloadStatusId: downloadingStatusId,
-        name: ep.rssTitle,
-        createdAt: now,
-        updatedAt: now
-      }).onConflictDoNothing();
-    }
-
-    res.json({ success: true, message: 'Download started', torrentHash });
+    logger.info({ episodeId: ep.id, torrentHash: result.torrentHash }, '[Manual Download] SUCCESS');
+    res.json({ success: true, message: 'Download started', torrentHash: result.torrentHash });
   } catch (error) {
-    console.error('Error downloading episode:', error);
+    logger.error({ error: error.message, stack: error.stack }, '[Manual Download] Exception');
     res.status(500).json({ error: 'Failed to download episode' });
   }
 };
@@ -666,7 +662,7 @@ const deleteSeries = async (req, res) => {
 
     res.json({ success: true, message: 'Series and all related records deleted successfully' });
   } catch (error) {
-    console.error('Error deleting series:', error);
+    logger.error({ error: error.message }, 'Error deleting series');
     res.status(500).json({ error: 'Failed to delete series' });
   }
 };

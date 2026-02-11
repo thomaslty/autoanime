@@ -1,20 +1,55 @@
 const configService = require('./configService');
 const { db } = require('../db/db');
-const { series, seriesSeasons, seriesEpisodes, downloadStatus } = require('../db/schema');
-const { eq, and, inArray } = require('drizzle-orm');
+const { series, seriesSeasons, seriesEpisodes, downloadStatus, downloads } = require('../db/schema');
+const { eq, and, ne, inArray } = require('drizzle-orm');
 
 // Cache for download status IDs
 let downloadStatusCache = null;
 
 const getDownloadStatusIds = async () => {
   if (downloadStatusCache) return downloadStatusCache;
-  
+
   const statuses = await db.select().from(downloadStatus).where(eq(downloadStatus.isActive, true));
   downloadStatusCache = {};
   for (const status of statuses) {
     downloadStatusCache[status.name] = status.id;
   }
   return downloadStatusCache;
+};
+
+/**
+ * Clean up incomplete downloads for an episode when auto-download is disabled.
+ * Only removes downloads that are NOT completed (DOWNLOADING status).
+ * @param {number} episodeId - The episode ID
+ */
+const cleanupIncompleteDownloads = async (episodeId) => {
+  const statusIds = await getDownloadStatusIds();
+  const now = new Date();
+
+  // Find downloads for this episode that are NOT completed
+  const incompleteDownloads = await db.select()
+    .from(downloads)
+    .where(and(
+      eq(downloads.seriesEpisodeId, episodeId),
+      eq(downloads.downloadStatusId, statusIds['DOWNLOADING'])
+    ));
+
+  if (incompleteDownloads.length > 0) {
+    // Delete the incomplete download records
+    await db.delete(downloads).where(and(
+      eq(downloads.seriesEpisodeId, episodeId),
+      eq(downloads.downloadStatusId, statusIds['DOWNLOADING'])
+    ));
+
+    // Reset the episode download status (but keep the RSS match)
+    await db.update(seriesEpisodes)
+      .set({
+        downloadStatusId: null,
+        downloadedAt: null,
+        updatedAt: now
+      })
+      .where(eq(seriesEpisodes.id, episodeId));
+  }
 };
 
 const getSonarrConfig = async () => {
@@ -152,6 +187,20 @@ const toggleSeriesAutoDownload = async (seriesId, enabled) => {
   const now = new Date();
   const statusIds = await getDownloadStatusIds();
 
+  // If disabling auto-download, clean up incomplete downloads for all episodes in this series (excluding season 0)
+  if (!enabled) {
+    const allEpisodes = await db.select({ id: seriesEpisodes.id })
+      .from(seriesEpisodes)
+      .where(and(
+        eq(seriesEpisodes.seriesId, seriesId),
+        ne(seriesEpisodes.seasonNumber, 0)
+      ));
+
+    for (const ep of allEpisodes) {
+      await cleanupIncompleteDownloads(ep.id);
+    }
+  }
+
   await db.update(series)
     .set({
       isAutoDownloadEnabled: enabled,
@@ -159,6 +208,30 @@ const toggleSeriesAutoDownload = async (seriesId, enabled) => {
       updatedAt: now
     })
     .where(eq(series.id, seriesId));
+
+  // Cascade to all seasons (excluding season 0)
+  await db.update(seriesSeasons)
+    .set({
+      isAutoDownloadEnabled: enabled,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
+      updatedAt: now
+    })
+    .where(and(
+      eq(seriesSeasons.seriesId, seriesId),
+      ne(seriesSeasons.seasonNumber, 0)
+    ));
+
+  // Cascade to all episodes (excluding season 0)
+  await db.update(seriesEpisodes)
+    .set({
+      isAutoDownloadEnabled: enabled,
+      downloadStatusId: enabled ? statusIds['PENDING'] : statusIds['DISABLED'],
+      updatedAt: now
+    })
+    .where(and(
+      eq(seriesEpisodes.seriesId, seriesId),
+      ne(seriesEpisodes.seasonNumber, 0)
+    ));
 
   const result = await db.select().from(series).where(eq(series.id, seriesId));
   return result[0];
@@ -180,6 +253,20 @@ const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
   }
 
   const seasonId = season[0].id;
+
+  // If disabling auto-download, clean up incomplete downloads for all episodes in this season
+  if (!enabled) {
+    const seasonEpisodes = await db.select({ id: seriesEpisodes.id })
+      .from(seriesEpisodes)
+      .where(and(
+        eq(seriesEpisodes.seriesId, seriesId),
+        eq(seriesEpisodes.seasonNumber, seasonNumber)
+      ));
+
+    for (const ep of seasonEpisodes) {
+      await cleanupIncompleteDownloads(ep.id);
+    }
+  }
 
   await db.update(seriesSeasons)
     .set({
@@ -209,6 +296,11 @@ const toggleSeasonAutoDownload = async (seriesId, seasonNumber, enabled) => {
 const toggleEpisodeAutoDownload = async (episodeId, enabled) => {
   const now = new Date();
   const statusIds = await getDownloadStatusIds();
+
+  // If disabling auto-download, clean up incomplete downloads first
+  if (!enabled) {
+    await cleanupIncompleteDownloads(episodeId);
+  }
 
   await db.update(seriesEpisodes)
     .set({

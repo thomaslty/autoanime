@@ -16,7 +16,9 @@ const getSettings = async (req, res) => {
         qbittorrent: {
           url: config.qbittorrent.url,
           username: config.qbittorrent.username,
-          password: configService.maskValue(config.qbittorrent.password)
+          password: configService.maskValue(config.qbittorrent.password),
+          category: config.qbittorrent.category,
+          categorySavePath: config.qbittorrent.categorySavePath
         }
       }
     });
@@ -59,37 +61,51 @@ const updateSonarr = async (req, res) => {
 
 const updateQbittorrent = async (req, res) => {
   try {
-    const { url, username, password } = req.body;
-    
+    const { url, username, password, category, categorySavePath } = req.body;
+
     if (!url) {
       return res.status(400).json({ success: false, error: 'URL is required' });
     }
-    
+
     try {
       new URL(url);
     } catch {
       return res.status(400).json({ success: false, error: 'Invalid URL format' });
     }
-    
+
     const urlResult = await configService.setSetting('qbittorrent_url', url, false);
     if (!urlResult.success) {
       return res.status(500).json({ success: false, error: urlResult.error });
     }
-    
+
     if (username) {
       const userResult = await configService.setSetting('qbittorrent_username', username, false);
       if (!userResult.success) {
         return res.status(500).json({ success: false, error: userResult.error });
       }
     }
-    
+
     if (password) {
       const passResult = await configService.setSetting('qbittorrent_password', password, true);
       if (!passResult.success) {
         return res.status(500).json({ success: false, error: passResult.error });
       }
     }
-    
+
+    if (category !== undefined) {
+      const categoryResult = await configService.setSetting('qbittorrent_category', category, false);
+      if (!categoryResult.success) {
+        return res.status(500).json({ success: false, error: categoryResult.error });
+      }
+    }
+
+    if (categorySavePath !== undefined) {
+      const pathResult = await configService.setSetting('qbittorrent_category_save_path', categorySavePath, false);
+      if (!pathResult.success) {
+        return res.status(500).json({ success: false, error: pathResult.error });
+      }
+    }
+
     res.json({ success: true, message: 'qBittorrent configuration saved' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

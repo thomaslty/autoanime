@@ -1,3 +1,5 @@
+const { logger } = require('./logger');
+
 /**
  * Converts custom RSS regex syntax to standard JavaScript regex
  * Custom syntax:
@@ -41,7 +43,7 @@ const convertCustomRegexToStandard = (customRegex, episodeNumber = null) => {
     // Create and return the regex pattern (case-insensitive)
     return new RegExp(pattern, 'i');
   } catch (error) {
-    console.error('Error converting custom regex:', error);
+    logger.error({ error: error.message }, 'Error converting custom regex');
     return null;
   }
 };

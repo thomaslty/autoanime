@@ -5,6 +5,7 @@ const { eq, and, isNotNull, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 const qbittorrentService = require('./qbittorrentService');
+const { getInfoHash } = require('../utils/magnetHelper');
 
 let schedulerInterval = null;
 
@@ -95,8 +96,7 @@ const triggerAutoDownloads = async (rssId, newItems) => {
             const result = await qbittorrentService.addMagnet(item.magnetLink);
             if (result.success) {
               // Extract torrent hash and create download record
-              const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-              const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+              const torrentHash = getInfoHash(item.magnetLink);
 
               if (torrentHash && episode[0]) {
                 const now = new Date();
@@ -150,8 +150,7 @@ const triggerAutoDownloads = async (rssId, newItems) => {
           const result = await qbittorrentService.addMagnet(item.magnetLink);
           if (result.success) {
             // Extract torrent hash and create download record
-            const hashMatch = item.magnetLink.match(/xt=urn:btih:([a-fA-F0-9]+)/);
-            const torrentHash = hashMatch ? hashMatch[1].toUpperCase() : null;
+            const torrentHash = getInfoHash(item.magnetLink);
 
             if (torrentHash && episode[0]) {
               const now = new Date();
