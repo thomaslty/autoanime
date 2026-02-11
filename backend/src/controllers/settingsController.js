@@ -16,9 +16,7 @@ const getSettings = async (req, res) => {
         qbittorrent: {
           url: config.qbittorrent.url,
           username: config.qbittorrent.username,
-          password: configService.maskValue(config.qbittorrent.password),
-          category: config.qbittorrent.category,
-          categorySavePath: config.qbittorrent.categorySavePath
+          password: configService.maskValue(config.qbittorrent.password)
         }
       }
     });
@@ -61,7 +59,7 @@ const updateSonarr = async (req, res) => {
 
 const updateQbittorrent = async (req, res) => {
   try {
-    const { url, username, password, category, categorySavePath } = req.body;
+    const { url, username, password } = req.body;
 
     if (!url) {
       return res.status(400).json({ success: false, error: 'URL is required' });
@@ -89,20 +87,6 @@ const updateQbittorrent = async (req, res) => {
       const passResult = await configService.setSetting('qbittorrent_password', password, true);
       if (!passResult.success) {
         return res.status(500).json({ success: false, error: passResult.error });
-      }
-    }
-
-    if (category !== undefined) {
-      const categoryResult = await configService.setSetting('qbittorrent_category', category, false);
-      if (!categoryResult.success) {
-        return res.status(500).json({ success: false, error: categoryResult.error });
-      }
-    }
-
-    if (categorySavePath !== undefined) {
-      const pathResult = await configService.setSetting('qbittorrent_category_save_path', categorySavePath, false);
-      if (!pathResult.success) {
-        return res.status(500).json({ success: false, error: pathResult.error });
       }
     }
 

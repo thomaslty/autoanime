@@ -149,9 +149,7 @@ const getConfig = async () => {
     qbittorrent: {
       url: await getSettingWithFallback('qbittorrent_url', 'QBITTORRENT_URL') || 'http://localhost:8080',
       username: await getSettingWithFallback('qbittorrent_username', 'QBITTORRENT_USERNAME') || 'admin',
-      password: await getSettingWithFallback('qbittorrent_password', 'QBITTORRENT_PASSWORD') || 'adminadmin',
-      category: await getSetting('qbittorrent_category') || 'autoanime',
-      categorySavePath: await getSetting('qbittorrent_category_save_path') || '/downloads/autoanime'
+      password: await getSettingWithFallback('qbittorrent_password', 'QBITTORRENT_PASSWORD') || 'adminadmin'
     }
   };
 };

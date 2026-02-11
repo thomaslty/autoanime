@@ -111,12 +111,12 @@ async function getAppliedMigrations() {
   });
 
   try {
-    // Check if drizzle_migrations table exists
+    // Drizzle ORM stores migrations in drizzle.__drizzle_migrations, not public.drizzle_migrations
     const checkTable = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'drizzle_migrations'
+        WHERE table_schema = 'drizzle' 
+        AND table_name = '__drizzle_migrations'
       )
     `);
     
@@ -124,7 +124,7 @@ async function getAppliedMigrations() {
       return [];
     }
 
-    const result = await pool.query('SELECT hash, created_at FROM drizzle_migrations ORDER BY created_at');
+    const result = await pool.query('SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at');
     await pool.end();
     return result.rows;
   } catch (error) {
@@ -145,8 +145,10 @@ async function checkMigrationsStatus() {
   
   if (journal.length > 0) {
     log.info('Migration journal entries:');
-    journal.forEach(entry => {
-      const isApplied = applied.some(a => a.hash === entry.tag);
+    // Drizzle stores SHA-256 hashes of SQL content, not tag names
+    // Migrations are applied in order, so we match by index
+    journal.forEach((entry, index) => {
+      const isApplied = index < applied.length;
       const status = isApplied 
         ? `${colors.green}[APPLIED]${colors.reset}` 
         : `${colors.yellow}[PENDING]${colors.reset}`;

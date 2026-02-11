@@ -41,7 +41,7 @@ const getDownloads = async (req, res) => {
 
 const addMagnet = async (req, res) => {
   try {
-    const { magnet, category = 'autoanime' } = req.body;
+    const { magnet } = req.body;
     if (!magnet) {
       return res.status(400).json({ error: 'Magnet link is required' });
     }
@@ -49,7 +49,7 @@ const addMagnet = async (req, res) => {
     // Get download status IDs
     const statusIds = await getDownloadStatusIds();
 
-    const result = await qbittorrentService.addMagnet(magnet, category);
+    const result = await qbittorrentService.addMagnet(magnet);
     if (!result.success) {
       return res.status(500).json({ error: result.message });
     }
@@ -163,7 +163,8 @@ const syncDownloads = async (req, res) => {
             downloadStatusId,
             size: torrent.size,
             progress: parseFloat((torrent.progress * 100).toFixed(2)),
-            filePath: torrent.save_path,
+            contentPath: torrent.content_path,
+            savePath: torrent.save_path,
             updatedAt: now
           })
           .where(eq(downloads.id, existing[0].id));

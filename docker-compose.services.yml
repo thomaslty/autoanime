@@ -1,45 +1,5 @@
-
-
-# Development docker-compose override
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-# clean build: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build --force-recreate --no-cache --remove-orphans
-
+  
 services:
-  frontend:
-    container_name: autoanime-frontend
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-    environment:
-      - NODE_ENV=development
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    container_name: autoanime-backend
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./backend/src:/app/src
-      - ./qbit_download:/downloads
-      - ./sonarr/media:/media
-    environment:
-      - NODE_ENV=development
-      - PORT=3000
-      - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
-    depends_on:
-      - postgres
-    restart: unless-stopped
-
   sonarr:
     image: lscr.io/linuxserver/sonarr:4.0.16
     container_name: sonarr-anime

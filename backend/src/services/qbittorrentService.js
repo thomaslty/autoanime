@@ -115,37 +115,58 @@ const getConnectionStatus = async () => {
 
 let categoryEnsured = false;
 
+const CATEGORY_NAME = 'autoanime';
+
 /**
- * Ensure the download category exists in qBittorrent with the configured save path.
+ * Get qBittorrent's default save path via API.
+ */
+const getDefaultSavePath = async () => {
+  await ensureLogin();
+  const config = await getQbitConfig();
+  const apiBase = getApiBase(config.url);
+
+  const response = await fetch(`${apiBase}/app/defaultSavePath`, {
+    headers: getHeaders(config.url)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to get default save path: ${response.status}`);
+  }
+
+  const savePath = await response.text();
+  return savePath.trim();
+};
+
+/**
+ * Ensure the download category exists in qBittorrent.
+ * Reads qBittorrent's default download directory and appends our category name.
  * Called once before the first download.
  */
 const ensureCategory = async () => {
   if (categoryEnsured) return;
   try {
-    const config = await getQbitConfig();
-    const categoryName = config.category || 'autoanime';
-    const savePath = config.categorySavePath || '/downloads/autoanime';
-    await createCategory(categoryName, savePath);
+    const defaultSavePath = await getDefaultSavePath();
+    const savePath = path.join(defaultSavePath, CATEGORY_NAME);
+    await createCategory(CATEGORY_NAME, savePath);
     categoryEnsured = true;
-    logger.info({ category: categoryName, savePath }, 'qBittorrent category ensured');
+    logger.info({ category: CATEGORY_NAME, savePath }, 'qBittorrent category ensured');
   } catch (error) {
     logger.error({ error: error.message }, 'Failed to ensure qBittorrent category');
   }
 };
 
-const addMagnet = async (magnet, category) => {
+const addMagnet = async (magnet) => {
   try {
     await ensureLogin();
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
-    const categoryName = category || config.category || 'autoanime';
 
     // Ensure category exists before first download
     await ensureCategory();
 
     const formData = new URLSearchParams();
     formData.append('urls', magnet);
-    formData.append('category', categoryName);
+    formData.append('category', CATEGORY_NAME);
 
     const response = await fetch(`${apiBase}/torrents/add`, {
       method: 'POST',
@@ -353,17 +374,12 @@ const mapQbitStateToStatus = (state) => {
  * Copy downloaded file from qBittorrent download path to the anime media folder
  * and rename to S0XE0X format.
  */
-const copyDownloadedFile = async (download, filePath) => {
+const copyDownloadedFile = async (download, contentPath, rootPath) => {
   try {
-    if (!download.seriesEpisodeId || !filePath) return;
+    if (!download.seriesEpisodeId || !contentPath) return;
 
-    const mediaPath = process.env.MEDIA_PATH;
-    const qbitPath = process.env.QBITTORRENT_PATH;
-
-    if (!mediaPath || !qbitPath) {
-      logger.warn('MEDIA_PATH or QBITTORRENT_PATH env not set, skipping file copy');
-      return;
-    }
+    const mediaPath = process.env.MEDIA_PATH || '/media';
+    const qbittorrentPath = process.env.QBITTORRENT_PATH || '/downloads';
 
     // Get episode and series info
     const episodeData = await db.select({
@@ -389,31 +405,27 @@ const copyDownloadedFile = async (download, filePath) => {
       return;
     }
 
-    // Resolve source file path (qBittorrent download location)
-    // filePath from qBit is the content_path (full path to the file/folder on qBit's filesystem)
-    // We need to map it to our local filesystem using QBITTORRENT_PATH
-    const sourcePath = filePath;
+    // Construct the actual source path on our filesystem
+    // contentPath/rootPath are from qBit's container — not the real disk location
+    // We use QBITTORRENT_PATH + "autoanime" + basename to get the real location
+    // rootPath non-empty = multi-file torrent (folder), empty = single file
+    const basename = rootPath ? path.basename(rootPath) : path.basename(contentPath);
+    const sourcePath = path.join(qbittorrentPath, 'autoanime', basename);
 
     // Resolve destination path
-    // Sonarr path example: /media/Frieren - Beyond Journey's End
-    // We map it: replace the sonarr root with MEDIA_PATH
     const sonarrPath = seriesData[0].path;
-    // Extract the series folder name from the sonarr path (last segment)
     const seriesFolder = path.basename(sonarrPath);
     const seasonFolder = `Season ${String(ep.seasonNumber).padStart(2, '0')}`;
     const destDir = path.join(mediaPath, seriesFolder, seasonFolder);
 
     // Build the episode filename: S01E05.ext
-    const sourceExt = path.extname(sourcePath) || '.mkv';
+    const sourceExt = path.extname(sourcePath);
     const episodeFilename = `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}${sourceExt}`;
     const destPath = path.join(destDir, episodeFilename);
 
     // Ensure destination directory exists
     await fs.promises.mkdir(destDir, { recursive: true });
 
-    // Check if source exists on disk
-    // The filePath from qBit is the path inside qBit's filesystem.
-    // We need to resolve it relative to QBITTORRENT_PATH
     let actualSourcePath = sourcePath;
 
     // If source is a directory (multi-file torrent), find the largest file
@@ -519,18 +531,20 @@ const syncDownloadStatuses = async () => {
       const newStatusName = mapQbitStateToStatus(torrent.state);
       const newStatusId = statusIdMap[newStatusName];
       const progress = Math.round((torrent.progress || 0) * 100 * 100) / 100;
-      const filePath = torrent.content_path || torrent.save_path || null;
+      const contentPath = torrent.content_path;
+      const savePath = torrent.save_path;
 
       // Only update if something changed
       if (download.downloadStatusId !== newStatusId ||
         download.progress !== progress ||
-        download.filePath !== filePath) {
+        download.contentPath !== contentPath) {
 
         await db.update(downloads)
           .set({
             downloadStatusId: newStatusId,
             progress: progress.toString(),
-            filePath: filePath,
+            contentPath: contentPath,
+            savePath: savePath,
             size: torrent.size || download.size,
             updatedAt: now
           })
@@ -548,9 +562,8 @@ const syncDownloadStatuses = async () => {
             episodeUpdates.downloadedAt = now;
 
             // Copy file from qBit download path to media folder
-            // TODO: for local testing, we will not copy the file, but just log the file path.
-            logger.info({ filePath }, 'Downloaded file path');
-            // await copyDownloadedFile(download, filePath);
+            logger.info({ contentPath, rootPath: torrent.root_path }, 'Download complete, copying to media folder');
+            await copyDownloadedFile(download, torrent.content_path, torrent.root_path);
           }
 
           await db.update(seriesEpisodes)
@@ -623,5 +636,6 @@ module.exports = {
   renameFile,
   login,
   syncDownloadStatuses,
-  mapQbitStateToStatus
+  mapQbitStateToStatus,
+  copyDownloadedFile
 };
