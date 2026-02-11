@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const routes = require('./routes');
@@ -15,6 +16,7 @@ const { db } = require('./db/db');
 const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
 const { eq, and } = require('drizzle-orm');
 const { logger } = require('./utils/logger');
+const { initSocket } = require('./socket');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -332,7 +334,10 @@ const startServer = async () => {
     startDownloadSyncScheduler();
   }
 
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  initSocket(server);
+
+  server.listen(PORT, () => {
     logger.info({ port: PORT }, 'AutoAnime backend running');
   });
 };

@@ -5,6 +5,7 @@ const { db } = require('../db/db');
 const { downloads, seriesEpisodes, series, downloadStatus } = require('../db/schema');
 const { eq, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
+const { getIO } = require('../socket');
 
 let cookie = null;
 let currentConfig = null;
@@ -486,6 +487,8 @@ const syncDownloadStatuses = async () => {
 
     let syncedCount = 0;
     const now = new Date();
+    // Collect updates per series for WebSocket emission
+    const updatedBySeries = {};
 
     for (const download of pendingDownloads) {
       const torrent = torrentMap.get(download.torrentHash?.toLowerCase());
@@ -553,6 +556,24 @@ const syncDownloadStatuses = async () => {
           await db.update(seriesEpisodes)
             .set(episodeUpdates)
             .where(eq(seriesEpisodes.id, download.seriesEpisodeId));
+
+          // Look up seriesId for this episode to scope the WebSocket event
+          const episodeRow = await db.select({ seriesId: seriesEpisodes.seriesId })
+            .from(seriesEpisodes)
+            .where(eq(seriesEpisodes.id, download.seriesEpisodeId))
+            .limit(1);
+
+          if (episodeRow[0]) {
+            const sid = episodeRow[0].seriesId;
+            if (!updatedBySeries[sid]) updatedBySeries[sid] = [];
+            updatedBySeries[sid].push({
+              episodeId: download.seriesEpisodeId,
+              downloadStatusId: newStatusId,
+              downloadStatusName: newStatusName,
+              progress,
+              torrentHash: download.torrentHash,
+            });
+          }
         }
 
         syncedCount++;
@@ -565,7 +586,19 @@ const syncDownloadStatuses = async () => {
       }
     }
 
+    // Emit WebSocket events per affected series
     if (syncedCount > 0) {
+      const io = getIO();
+      if (io) {
+        for (const [seriesId, episodes] of Object.entries(updatedBySeries)) {
+          io.to(`series:${seriesId}`).emit('download:status-updated', {
+            seriesId: Number(seriesId),
+            episodes,
+          });
+          logger.debug({ seriesId, episodeCount: episodes.length }, 'Emitted download:status-updated');
+        }
+      }
+
       logger.info({ syncedCount, total: pendingDownloads.length }, 'Download status sync complete');
     }
     return { synced: syncedCount };

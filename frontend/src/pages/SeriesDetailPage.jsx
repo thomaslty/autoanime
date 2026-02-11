@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Input } from "@/components/ui/input"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { useDownloadStatus } from "@/hooks/useDownloadStatus"
 
 const AutoDownloadStatus = {
   DISABLED: 0,
@@ -116,6 +117,52 @@ export function SeriesDetailPage() {
     fetchSeries()
     fetchDownloadStatus()
   }, [id])
+
+  // Map backend status names to frontend AutoDownloadStatus enum values
+  const statusNameToEnum = {
+    PENDING: AutoDownloadStatus.PENDING,
+    DOWNLOADING: AutoDownloadStatus.DOWNLOADING,
+    DOWNLOADED: AutoDownloadStatus.DOWNLOADED,
+    FAILED: AutoDownloadStatus.FAILED,
+  }
+
+  // Real-time download status updates via WebSocket
+  const handleDownloadUpdate = useCallback((data) => {
+    if (!data?.episodes) return
+
+    // Update episode-level autoDownloadStatus in series state
+    setSeries(prev => {
+      if (!prev) return prev
+      const updatedEpisodeIds = new Set(data.episodes.map(e => e.episodeId))
+      const episodeUpdateMap = {}
+      for (const ep of data.episodes) {
+        episodeUpdateMap[ep.episodeId] = ep
+      }
+
+      return {
+        ...prev,
+        episodes: prev.episodes.map(e => {
+          if (!updatedEpisodeIds.has(e.id)) return e
+          const update = episodeUpdateMap[e.id]
+          return {
+            ...e,
+            autoDownloadStatus: statusNameToEnum[update.downloadStatusName] ?? e.autoDownloadStatus,
+            hasFile: update.downloadStatusName === 'DOWNLOADED' ? true : e.hasFile,
+          }
+        })
+      }
+    })
+
+    // Re-fetch aggregated download status counts
+    fetch(`/api/sonarr/series/${id}/auto-download-status`)
+      .then(res => res.ok ? res.json() : null)
+      .then(statusData => {
+        if (statusData) setDownloadStatus(statusData)
+      })
+      .catch(() => {})
+  }, [id])
+
+  useDownloadStatus(id, handleDownloadUpdate)
 
   const getServiceError = () => {
     if (!health) return null
