@@ -162,9 +162,9 @@ const syncDownloads = async (req, res) => {
             name: torrent.name,
             downloadStatusId,
             size: torrent.size,
-            progress: parseFloat((torrent.progress * 100).toFixed(2)),
+            progress: parseFloat((torrent.progress).toFixed(4)),
             contentPath: torrent.content_path,
-            savePath: torrent.save_path,
+            rootPath: torrent.root_path,
             updatedAt: now
           })
           .where(eq(downloads.id, existing[0].id));

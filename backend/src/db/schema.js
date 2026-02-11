@@ -171,7 +171,7 @@ const downloads = pgTable('downloads', {
   size: bigint('size', { mode: 'number' }),
   progress: numeric('progress', { precision: 5, scale: 2 }).default('0'),
   contentPath: varchar('content_path'),
-  savePath: varchar('save_path'),
+  rootPath: varchar('root_path'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [

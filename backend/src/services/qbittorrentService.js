@@ -138,18 +138,29 @@ const getDefaultSavePath = async () => {
 };
 
 /**
- * Ensure the download category exists in qBittorrent.
- * Reads qBittorrent's default download directory and appends our category name.
+ * Ensure the download category exists in qBittorrent with the correct save path.
+ * Checks if "autoanime" category exists, creates it if missing, or updates
+ * the save path if it doesn't match the expected path (defaultSavePath/autoanime).
  * Called once before the first download.
  */
 const ensureCategory = async () => {
   if (categoryEnsured) return;
   try {
     const defaultSavePath = await getDefaultSavePath();
-    const savePath = path.join(defaultSavePath, CATEGORY_NAME);
-    await createCategory(CATEGORY_NAME, savePath);
+    const expectedPath = path.join(defaultSavePath, CATEGORY_NAME);
+
+    const categories = await getCategories();
+    const existing = categories[CATEGORY_NAME];
+
+    if (!existing) {
+      await createCategory(CATEGORY_NAME, expectedPath);
+      logger.info({ category: CATEGORY_NAME, savePath: expectedPath }, 'Created qBittorrent category');
+    } else if (existing.savePath !== expectedPath) {
+      await editCategory(CATEGORY_NAME, expectedPath);
+      logger.info({ category: CATEGORY_NAME, oldPath: existing.savePath, newPath: expectedPath }, 'Updated qBittorrent category save path');
+    }
+
     categoryEnsured = true;
-    logger.info({ category: CATEGORY_NAME, savePath }, 'qBittorrent category ensured');
   } catch (error) {
     logger.error({ error: error.message }, 'Failed to ensure qBittorrent category');
   }
@@ -167,6 +178,7 @@ const addMagnet = async (magnet) => {
     const formData = new URLSearchParams();
     formData.append('urls', magnet);
     formData.append('category', CATEGORY_NAME);
+    formData.append('autoTMM', true);
 
     const response = await fetch(`${apiBase}/torrents/add`, {
       method: 'POST',
@@ -233,7 +245,7 @@ const pauseTorrent = async (hash) => {
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
 
-    const response = await fetch(`${apiBase}/torrents/pause`, {
+    const response = await fetch(`${apiBase}/torrents/stop`, {
       method: 'POST',
       headers: getHeaders(config.url),
       body: `hashes=${hash}`
@@ -250,7 +262,7 @@ const resumeTorrent = async (hash) => {
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
 
-    const response = await fetch(`${apiBase}/torrents/resume`, {
+    const response = await fetch(`${apiBase}/torrents/start`, {
       method: 'POST',
       headers: getHeaders(config.url),
       body: `hashes=${hash}`
@@ -305,7 +317,24 @@ const createCategory = async (name, savePath) => {
     const config = await getQbitConfig();
     const apiBase = getApiBase(config.url);
 
-    const response = await fetch(`${apiBase}/torrents/addCategory`, {
+    const response = await fetch(`${apiBase}/torrents/createCategory`, {
+      method: 'POST',
+      headers: getHeaders(config.url),
+      body: `category=${encodeURIComponent(name)}&savePath=${encodeURIComponent(savePath)}`
+    });
+    return { success: response.ok };
+  } catch (error) {
+    return { success: false, message: error.message };
+  }
+};
+
+const editCategory = async (name, savePath) => {
+  try {
+    await ensureLogin();
+    const config = await getQbitConfig();
+    const apiBase = getApiBase(config.url);
+
+    const response = await fetch(`${apiBase}/torrents/editCategory`, {
       method: 'POST',
       headers: getHeaders(config.url),
       body: `category=${encodeURIComponent(name)}&savePath=${encodeURIComponent(savePath)}`
@@ -505,34 +534,34 @@ const syncDownloadStatuses = async () => {
     for (const download of pendingDownloads) {
       const torrent = torrentMap.get(download.torrentHash?.toLowerCase());
 
-      // if (!torrent) {
-      //   // Torrent no longer exists in qBittorrent
-      //   // If the download was not yet finished, clean up DB records
-      //   logger.warn({ downloadId: download.id, torrentHash: download.torrentHash }, 'Torrent not found in qBittorrent, cleaning up');
+      if (!torrent) {
+        // Torrent no longer exists in qBittorrent
+        // If the download was not yet finished, clean up DB records
+        logger.warn({ downloadId: download.id, torrentHash: download.torrentHash }, 'Torrent not found in qBittorrent, cleaning up');
 
-      //   // Delete the download record
-      //   await db.delete(downloads).where(eq(downloads.id, download.id));
+        // Delete the download record
+        await db.delete(downloads).where(eq(downloads.id, download.id));
 
-      //   // Reset the episode download status (but keep the RSS match)
-      //   if (download.seriesEpisodeId) {
-      //     await db.update(seriesEpisodes)
-      //       .set({
-      //         downloadStatusId: null,
-      //         downloadedAt: null,
-      //         updatedAt: now
-      //       })
-      //       .where(eq(seriesEpisodes.id, download.seriesEpisodeId));
-      //   }
+        // Reset the episode download status (but keep the RSS match)
+        if (download.seriesEpisodeId) {
+          await db.update(seriesEpisodes)
+            .set({
+              downloadStatusId: null,
+              downloadedAt: null,
+              updatedAt: now
+            })
+            .where(eq(seriesEpisodes.id, download.seriesEpisodeId));
+        }
 
-      //   syncedCount++;
-      //   continue;
-      // }
+        syncedCount++;
+        continue;
+      }
 
       const newStatusName = mapQbitStateToStatus(torrent.state);
       const newStatusId = statusIdMap[newStatusName];
-      const progress = Math.round((torrent.progress || 0) * 100 * 100) / 100;
+      const progress = Math.round((torrent.progress || 0) * 10000) / 10000;
       const contentPath = torrent.content_path;
-      const savePath = torrent.save_path;
+      const rootPath = torrent.root_path;
 
       // Only update if something changed
       if (download.downloadStatusId !== newStatusId ||
@@ -544,7 +573,7 @@ const syncDownloadStatuses = async () => {
             downloadStatusId: newStatusId,
             progress: progress.toString(),
             contentPath: contentPath,
-            savePath: savePath,
+            rootPath: rootPath,
             size: torrent.size || download.size,
             updatedAt: now
           })
@@ -631,6 +660,7 @@ module.exports = {
   deleteTorrent,
   getCategories,
   createCategory,
+  editCategory,
   ensureCategory,
   setTorrentLocation,
   renameFile,

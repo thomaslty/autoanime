@@ -1,0 +1,1 @@
+ALTER TABLE "downloads" RENAME COLUMN "save_path" TO "root_path";
