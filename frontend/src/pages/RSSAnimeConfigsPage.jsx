@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
+import { SearchableSelect } from "../components/SearchableSelect"
 import { Plus, Edit2, Trash2, Power, PowerOff, Search, Settings, AlertCircle, WifiOff, Eye, ChevronUp, ChevronDown, ChevronsUpDown, HelpCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,6 +37,11 @@ export function RSSAnimeConfigsPage() {
   const [pageSize, setPageSize] = useState(50)
   const [deleteConfirmId, setDeleteConfirmId] = useState(null)
   const navigate = useNavigate()
+
+  const sourceItems = useMemo(() =>
+    sources.map(s => ({ label: s.name, value: String(s.id) })),
+    [sources]
+  )
 
   const fetchData = async () => {
     try {
@@ -511,19 +517,16 @@ export function RSSAnimeConfigsPage() {
             <div className="space-y-2">
               <Label htmlFor="source">RSS Source (optional)</Label>
               <div className="flex gap-2">
-                <Select value={formData.rssSourceId} onValueChange={(value) => {
-                  setFormData({ ...formData, rssSourceId: value })
-                  setPreview(null)
-                }}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select source..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sources.map(s => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  items={sourceItems}
+                  value={formData.rssSourceId}
+                  onChange={(value) => {
+                    setFormData({ ...formData, rssSourceId: value })
+                    setPreview(null)
+                  }}
+                  placeholder="Select source..."
+                  className="flex-1"
+                />
                 <Button
                   variant="outline"
                   onClick={handlePreview}
