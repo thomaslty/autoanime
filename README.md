@@ -25,6 +25,24 @@ Similar project that does not fit all my needs:
 - **Database**: PostgreSQL
 - **Deployment**: Docker
 
+## Screenshots
+### Home Page
+![home page](/images/homepage.jpg)
+
+### Series Detail Page
+![series detail page](/images/series_detail_page.JPG)
+![configure rss](/images/series_detail_configure_rss.JPG)
+![preview rss matches](/images/preview_rss_matches.JPG)
+
+### RSS Config
+![RSS Config](/images/add_rss_feed.JPG)
+
+### Anime Specific Regex
+![Anime Config](/images/add_anime_config.JPG)
+
+### Settings
+![Settings](/images/settings.JPG)
+
 ## Getting Started
 
 ### Prerequisites
