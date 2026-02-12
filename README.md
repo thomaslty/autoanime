@@ -66,8 +66,8 @@ services:
       - QBITTORRENT_USERNAME=${QBITTORRENT_USERNAME:-admin}
       - QBITTORRENT_PASSWORD=${QBITTORRENT_PASSWORD:-adminadmin}
     volumes:
-      - ./sonarr/media:/media
-      - ./qbit_download:/downloads
+      - ./sonarr/media:/media # your sonarr media folder
+      - ./qbit_download:/downloads # your qbittorrent download folder
     depends_on:
       - postgres
     restart: unless-stopped
