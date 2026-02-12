@@ -4,11 +4,11 @@ Chinese Community focused anime auto download tool.
 
 ## Motivation
 Similar project that does not fit all my needs:
-- **AutoBangumi**: Mature but heavily dependant on Mikan Project
+- **AutoBangumi**: Mature but heavily depends on Mikan Project
   - I would like to use dhmy as main source
   - and pick my favorite sub-group
 - **xarr-rss**: Exactly what I needed but
-  - premium subscription
+  - have premium subscription
   - author banned my ip, I cannot login, thus cannot use the app.
 
 ## Features
