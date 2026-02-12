@@ -685,6 +685,23 @@ const deleteSeries = async (req, res) => {
   }
 };
 
+const getEpisodeDownloadStatuses = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const seriesResult = await db.select().from(series).where(eq(series.id, id));
+    if (seriesResult.length === 0) {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+
+    const result = await sonarrService.getEpisodeDownloadStatuses(parseInt(id));
+    res.json(result);
+  } catch (error) {
+    logger.error({ error: error.message }, 'Error getting episode download statuses');
+    res.status(500).json({ error: `Failed to get episode download statuses: ${error.message}` });
+  }
+};
+
 module.exports = {
   getStatus,
   getSeries,
@@ -697,6 +714,7 @@ module.exports = {
   toggleSeasonAutoDownload,
   toggleEpisodeAutoDownload,
   getSeriesAutoDownloadStatus,
+  getEpisodeDownloadStatuses,
   resetRssMatches,
   updateEpisodeRssItem,
   downloadEpisode,

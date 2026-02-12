@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Switch } from "@/components/ui/switch"
 import { ChevronDown, CheckCircle2, Clock, AlertCircle, FileVideo, Eye, Download, XCircle, SkipForward } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 
 const AutoDownloadStatus = {
@@ -32,12 +33,17 @@ function getStatusIcon(status, hasFile) {
   }
 }
 
-function getStatusText(status, hasFile) {
+function getStatusText(status, hasFile, progress) {
   if (hasFile) return "Downloaded"
 
   switch (status) {
-    case AutoDownloadStatus.DOWNLOADING:
+    case AutoDownloadStatus.DOWNLOADING: {
+      if (progress != null && isFinite(progress)) {
+        const pct = Math.round(progress * 100)
+        return `Downloading ${pct}%`
+      }
       return "Downloading"
+    }
     case AutoDownloadStatus.PENDING:
       return "Pending"
     case AutoDownloadStatus.FAILED:
@@ -82,40 +88,53 @@ function EpisodeRow({ episode, seriesId, onToggleAutoDownload }) {
   const isMonitored = episode.monitored
   const isAutoDownloadEnabled = episode.isAutoDownloadEnabled
   const status = episode.autoDownloadStatus || AutoDownloadStatus.DISABLED
+  const progress = episode.downloadProgress
+
+  const isDownloading = status === AutoDownloadStatus.DOWNLOADING && !hasFile
+  const progressPct = isDownloading && progress != null && isFinite(progress)
+    ? Math.round(progress * 100)
+    : null
 
   return (
     <div className={cn(
-      "flex items-center justify-between py-2 px-3 border-b last:border-b-0",
+      "flex flex-col border-b last:border-b-0",
       !isMonitored && "opacity-60"
     )}>
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-muted-foreground w-8">
-          E{episode.episodeNumber}
-        </span>
-        <div className="flex flex-col">
-          <span className="text-sm font-medium line-clamp-1">
-            {episode.title || `Episode ${episode.episodeNumber}`}
+      <div className="flex items-center justify-between py-2 px-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-muted-foreground w-8">
+            E{episode.episodeNumber}
           </span>
-          {episode.airDate && (
-            <span className="text-xs text-muted-foreground">
-              {new Date(episode.airDate).toLocaleDateString()}
+          <div className="flex flex-col">
+            <span className="text-sm font-medium line-clamp-1">
+              {episode.title || `Episode ${episode.episodeNumber}`}
             </span>
-          )}
+            {episode.airDate && (
+              <span className="text-xs text-muted-foreground">
+                {new Date(episode.airDate).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {getStatusIcon(status, hasFile)}
+            <span className="text-xs text-muted-foreground">{getStatusText(status, hasFile, progress)}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">Auto</span>
+            <Switch
+              checked={isAutoDownloadEnabled}
+              onCheckedChange={(checked) => onToggleAutoDownload(episode.id, checked)}
+            />
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          {getStatusIcon(status, hasFile)}
-          <span className="text-xs text-muted-foreground">{getStatusText(status, hasFile)}</span>
+      {isDownloading && progressPct != null && (
+        <div className="px-3 pb-2">
+          <Progress value={progressPct} className="h-1" />
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Auto</span>
-          <Switch
-            checked={isAutoDownloadEnabled}
-            onCheckedChange={(checked) => onToggleAutoDownload(episode.id, checked)}
-          />
-        </div>
-      </div>
+      )}
     </div>
   )
 }

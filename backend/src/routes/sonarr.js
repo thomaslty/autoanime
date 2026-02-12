@@ -9,6 +9,7 @@ router.get('/reference/download-statuses', getDownloadStatuses);
 router.get('/series', sonarrController.getSeries);
 router.get('/series/:id', sonarrController.getSeriesById);
 router.get('/series/:id/episodes', sonarrController.getSeriesEpisodes);
+router.get('/series/:id/episodes/download-status', sonarrController.getEpisodeDownloadStatuses);
 router.get('/series/:id/auto-download-status', sonarrController.getSeriesAutoDownloadStatus);
 router.post('/sync', sonarrController.syncSeries);
 router.post('/series/:id/episodes/sync', sonarrController.syncSeriesEpisodes);

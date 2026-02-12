@@ -668,19 +668,22 @@ const syncDownloadStatuses = async () => {
       }
     }
 
-    // Emit WebSocket events per affected series
-    if (syncedCount > 0) {
-      const io = getIO();
-      if (io) {
-        for (const [seriesId, episodes] of Object.entries(updatedBySeries)) {
-          io.to(`series:${seriesId}`).emit('download:status-updated', {
-            seriesId: Number(seriesId),
-            episodes,
-          });
-          logger.debug({ seriesId, episodeCount: episodes.length }, 'Emitted download:status-updated');
-        }
-      }
+    // WebSocket emission disabled — frontend now uses polling via
+    // GET /api/sonarr/series/:id/episodes/download-status instead.
+    // if (syncedCount > 0) {
+    //   const io = getIO();
+    //   if (io) {
+    //     for (const [seriesId, episodes] of Object.entries(updatedBySeries)) {
+    //       io.to(`series:${seriesId}`).emit('download:status-updated', {
+    //         seriesId: Number(seriesId),
+    //         episodes,
+    //       });
+    //       logger.debug({ seriesId, episodeCount: episodes.length }, 'Emitted download:status-updated');
+    //     }
+    //   }
+    // }
 
+    if (syncedCount > 0) {
       logger.info({ syncedCount, total: pendingDownloads.length }, 'Download status sync complete');
     }
     return { synced: syncedCount };

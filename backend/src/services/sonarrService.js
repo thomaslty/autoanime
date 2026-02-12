@@ -411,6 +411,71 @@ const getAggregatedStatus = (episodes, statusIds) => {
   return statusIds['DISABLED'];
 };
 
+/**
+ * Get per-episode download statuses (with progress) and aggregated summary for a series.
+ * Used by the frontend polling endpoint to replace WebSocket-based updates.
+ */
+const getEpisodeDownloadStatuses = async (seriesId) => {
+  const statusIds = await getDownloadStatusIds();
+
+  // Reverse map: status ID -> status name
+  const statusNameById = {};
+  for (const [name, id] of Object.entries(statusIds)) {
+    statusNameById[id] = name;
+  }
+
+  // Get all episodes for this series
+  const episodes = await db.select().from(seriesEpisodes).where(eq(seriesEpisodes.seriesId, seriesId));
+
+  // Get all downloads linked to these episodes (for progress info)
+  const episodeIds = episodes.map(e => e.id);
+  let downloadsMap = {};
+  if (episodeIds.length > 0) {
+    const dlRows = await db.select()
+      .from(downloads)
+      .where(inArray(downloads.seriesEpisodeId, episodeIds));
+    for (const dl of dlRows) {
+      downloadsMap[dl.seriesEpisodeId] = dl;
+    }
+  }
+
+  // Build per-episode status list
+  const episodeStatuses = episodes.map(e => {
+    const dl = downloadsMap[e.id];
+    const statusName = e.downloadStatusId ? (statusNameById[e.downloadStatusId] || null) : null;
+    return {
+      episodeId: e.id,
+      downloadStatusId: e.downloadStatusId || null,
+      downloadStatusName: statusName,
+      progress: dl ? dl.progress : null,
+      hasFile: e.hasFile || false,
+      isAutoDownloadEnabled: e.isAutoDownloadEnabled || false,
+    };
+  });
+
+  // Compute aggregated summary
+  const totalEpisodes = episodes.length;
+  const enabledCount = episodes.filter(e => e.isAutoDownloadEnabled).length;
+  const downloadedCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADED']).length;
+  const downloadingCount = episodes.filter(e => e.downloadStatusId === statusIds['DOWNLOADING']).length;
+  const pendingCount = episodes.filter(e => e.downloadStatusId === statusIds['PENDING']).length;
+  const failedCount = episodes.filter(e => e.downloadStatusId === statusIds['FAILED']).length;
+
+  return {
+    seriesId,
+    episodes: episodeStatuses,
+    summary: {
+      totalEpisodes,
+      enabledCount,
+      downloadedCount,
+      downloadingCount,
+      pendingCount,
+      failedCount,
+      isEnabled: enabledCount > 0,
+    },
+  };
+};
+
 module.exports = {
   getStatus,
   getAllSeries,
@@ -424,5 +489,6 @@ module.exports = {
   toggleSeasonAutoDownload,
   toggleEpisodeAutoDownload,
   getSeriesDownloadStatus,
-  getSeasonDownloadStatus
+  getSeasonDownloadStatus,
+  getEpisodeDownloadStatuses
 };
