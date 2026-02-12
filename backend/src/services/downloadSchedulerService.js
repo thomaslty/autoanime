@@ -5,8 +5,6 @@ const { logger } = require('../utils/logger');
 const qbittorrentService = require('./qbittorrentService');
 const { getInfoHash } = require('../utils/magnetHelper');
 
-let schedulerInterval = null;
-
 // Cache for download status IDs
 let downloadStatusCache = null;
 
@@ -165,26 +163,4 @@ const triggerPendingDownloads = async () => {
   }
 };
 
-const runScheduler = async () => {
-  try {
-    await triggerPendingDownloads();
-  } catch (error) {
-    logger.error({ error: error.message }, 'Error during download scheduler run');
-  }
-};
-
-const startScheduler = () => {
-  if (schedulerInterval) return;
-  logger.info('Download Scheduler starting (checks every 60s)');
-  schedulerInterval = setInterval(runScheduler, 60 * 1000);
-};
-
-const stopScheduler = () => {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
-    logger.info('Download Scheduler stopped');
-  }
-};
-
-module.exports = { startScheduler, stopScheduler, triggerPendingDownloads, triggerEpisodeDownload, getDownloadStatusIds };
+module.exports = { triggerPendingDownloads, triggerEpisodeDownload, getDownloadStatusIds };

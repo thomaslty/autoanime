@@ -7,10 +7,7 @@ const routes = require('./routes');
 const { testConnection } = require('./db/db');
 const sonarrService = require('./services/sonarrService');
 const qbittorrentService = require('./services/qbittorrentService');
-const { startScheduler: startRssFetchScheduler } = require('./services/rssFetchSchedulerService');
-const { startScheduler: startRssMatchingScheduler } = require('./services/rssMatchingSchedulerService');
-const { startScheduler: startDownloadScheduler } = require('./services/downloadSchedulerService');
-const { startDownloadSyncScheduler } = require('./services/downloadSyncSchedulerService');
+const schedulerManager = require('./services/schedulerManager');
 const { seedReferenceTables } = require('./db/seed');
 const { db } = require('./db/db');
 const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes } = require('./db/schema');
@@ -328,10 +325,7 @@ const startServer = async () => {
   } else {
     await seedReferenceTables();
     // await syncOnStartup();
-    startRssFetchScheduler();
-    startRssMatchingScheduler();
-    startDownloadScheduler();
-    startDownloadSyncScheduler();
+    schedulerManager.startAll();
   }
 
   const server = http.createServer(app);
@@ -343,5 +337,14 @@ const startServer = async () => {
 };
 
 startServer();
+
+// Graceful shutdown
+const shutdown = () => {
+  logger.info('Received shutdown signal, stopping schedulers...');
+  schedulerManager.stopAll();
+  process.exit(0);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 module.exports = app;

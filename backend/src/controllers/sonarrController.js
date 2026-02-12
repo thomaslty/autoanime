@@ -267,7 +267,29 @@ const getStatus = async (req, res) => {
 const getSeries = async (req, res) => {
   try {
     const allSeries = await db.select().from(series).orderBy(series.title);
-    res.json(allSeries);
+    
+    // For each series, check if it has at least one episode with auto-download enabled
+    const seriesWithFlags = await Promise.all(
+      allSeries.map(async (s) => {
+        const episodesWithAutoDownload = await db
+          .select()
+          .from(seriesEpisodes)
+          .where(
+            and(
+              eq(seriesEpisodes.seriesId, s.id),
+              eq(seriesEpisodes.isAutoDownloadEnabled, true)
+            )
+          )
+          .limit(1);
+        
+        return {
+          ...s,
+          hasAutoDownloadEpisodes: episodesWithAutoDownload.length > 0
+        };
+      })
+    );
+    
+    res.json(seriesWithFlags);
   } catch (error) {
     logger.error({ error: error.message }, 'Error fetching series');
     res.status(500).json({ error: 'Failed to fetch series' });

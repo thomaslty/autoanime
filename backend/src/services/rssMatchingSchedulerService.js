@@ -4,8 +4,6 @@ const { eq, and, isNull, isNotNull } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 
-let schedulerInterval = null;
-
 /**
  * Scan all series/seasons with rss_config_id, match RSS items to episodes,
  * and update rss_item_id in series_episodes table.
@@ -163,26 +161,4 @@ const matchAllRssItems = async () => {
   }
 };
 
-const runScheduler = async () => {
-  try {
-    await matchAllRssItems();
-  } catch (error) {
-    logger.error({ error: error.message }, 'Error during RSS matching scheduler run');
-  }
-};
-
-const startScheduler = () => {
-  if (schedulerInterval) return;
-  logger.info('RSS Matching Scheduler starting (checks every 60s)');
-  schedulerInterval = setInterval(runScheduler, 60 * 1000);
-};
-
-const stopScheduler = () => {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
-    logger.info('RSS Matching Scheduler stopped');
-  }
-};
-
-module.exports = { startScheduler, stopScheduler, matchAllRssItems };
+module.exports = { matchAllRssItems };

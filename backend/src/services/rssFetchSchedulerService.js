@@ -1,8 +1,6 @@
 const { fetchAndParseRss, getOverdueFeeds } = require('./rssService');
 const { logger } = require('../utils/logger');
 
-let schedulerInterval = null;
-
 /**
  * Fetch and parse all overdue RSS feeds.
  * Independently callable by other components.
@@ -30,26 +28,4 @@ const fetchAndParseAllRss = async () => {
   return { fetched };
 };
 
-const runScheduler = async () => {
-  try {
-    await fetchAndParseAllRss();
-  } catch (error) {
-    logger.error({ error: error.message }, 'Error during RSS fetch scheduler run');
-  }
-};
-
-const startScheduler = () => {
-  if (schedulerInterval) return;
-  logger.info('RSS Fetch Scheduler starting (checks every 60s)');
-  schedulerInterval = setInterval(runScheduler, 60 * 1000);
-};
-
-const stopScheduler = () => {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
-    logger.info('RSS Fetch Scheduler stopped');
-  }
-};
-
-module.exports = { startScheduler, stopScheduler, fetchAndParseAllRss };
+module.exports = { fetchAndParseAllRss };

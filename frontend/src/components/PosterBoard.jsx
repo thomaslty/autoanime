@@ -3,21 +3,39 @@ import { SeriesCard } from "./SeriesCard"
 import { RefreshCw, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 export function PosterBoard({ series = [], onSeriesClick, loading = false, onRefresh }) {
   const [searchTerm, setSearchTerm] = useState("")
+  const [autoDownloadFilter, setAutoDownloadFilter] = useState("all")
   const [filteredSeries, setFilteredSeries] = useState(series)
 
   useEffect(() => {
-    if (searchTerm.trim() === "") {
-      setFilteredSeries(series)
-    } else {
+    let filtered = series
+
+    // Apply search filter
+    if (searchTerm.trim() !== "") {
       const lowerTerm = searchTerm.toLowerCase()
-      setFilteredSeries(series.filter(s =>
+      filtered = filtered.filter(s =>
         s.title.toLowerCase().includes(lowerTerm)
-      ))
+      )
     }
-  }, [searchTerm, series])
+
+    // Apply auto-download filter
+    if (autoDownloadFilter === "with-auto-download") {
+      filtered = filtered.filter(s => s.hasAutoDownloadEpisodes === true)
+    } else if (autoDownloadFilter === "without-auto-download") {
+      filtered = filtered.filter(s => !s.hasAutoDownloadEpisodes)
+    }
+
+    setFilteredSeries(filtered)
+  }, [searchTerm, autoDownloadFilter, series])
 
   return (
     <div className="p-6">
@@ -37,6 +55,16 @@ export function PosterBoard({ series = [], onSeriesClick, loading = false, onRef
             <RefreshCw size={18} className={loading ? "animate-spin mr-2" : "mr-2"} />
             <span>Sync</span>
           </Button>
+          <Select value={autoDownloadFilter} onValueChange={setAutoDownloadFilter}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="Filter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Series</SelectItem>
+              <SelectItem value="with-auto-download">With Auto-Download</SelectItem>
+              <SelectItem value="without-auto-download">Without Auto-Download</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
