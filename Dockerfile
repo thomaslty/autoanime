@@ -25,7 +25,7 @@ COPY backend/drizzle.config.js ./
 # ---- Stage 3: Final image ----
 FROM node:24-alpine
 
-RUN apk add --no-cache nginx
+RUN apk add --no-cache nginx su-exec shadow
 
 WORKDIR /app
 

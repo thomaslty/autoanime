@@ -7,6 +7,8 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - NODE_ENV=production
       - PORT=3001
       - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
@@ -15,6 +17,9 @@ services:
       - QBITTORRENT_URL=${QBITTORRENT_URL:-http://qbittorrent:8080}
       - QBITTORRENT_USERNAME=${QBITTORRENT_USERNAME:-admin}
       - QBITTORRENT_PASSWORD=${QBITTORRENT_PASSWORD:-adminadmin}
+    volumes:
+      - ./sonarr/media:/media
+      - ./qbit_download:/downloads
     depends_on:
       - postgres
     restart: unless-stopped
