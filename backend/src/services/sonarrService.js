@@ -153,6 +153,29 @@ const refreshSeries = async (seriesId) => {
   return response.json();
 };
 
+/**
+ * Trigger Sonarr to rename all episode files in a series according to the naming format.
+ * @param {number} seriesId - The Sonarr series ID
+ */
+const renameSeries = async (seriesId) => {
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v3`;
+
+  const response = await fetch(`${apiBase}/command`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name: 'RenameSeries', seriesIds: [seriesId] })
+  });
+  if (!response.ok) {
+    throw new Error(`Sonarr API error: ${response.status}`);
+  }
+  return response.json();
+};
+
 const getEpisodesBySeries = async (seriesId) => {
   const sonarrConfig = await getSonarrConfig();
   const headers = {
@@ -394,6 +417,7 @@ module.exports = {
   getSeriesById,
   searchSeries,
   refreshSeries,
+  renameSeries,
   getEpisodesBySeries,
   getEpisodeById,
   toggleSeriesAutoDownload,

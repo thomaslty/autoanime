@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const configService = require('./configService');
+const sonarrService = require('./sonarrService');
 const { db } = require('../db/db');
 const { downloads, seriesEpisodes, series, downloadStatus } = require('../db/schema');
 const { eq, inArray } = require('drizzle-orm');
@@ -405,7 +406,7 @@ const mapQbitStateToStatus = (state) => {
  */
 const copyDownloadedFile = async (download, contentPath, rootPath) => {
   try {
-    if (!download.seriesEpisodeId || !contentPath) return;
+    if (!download.seriesEpisodeId || !contentPath) return { success: false, message: 'No series episode ID or content path' };
 
     const mediaPath = process.env.MEDIA_PATH || '/media';
     const qbittorrentPath = process.env.QBITTORRENT_PATH || '/downloads';
@@ -420,7 +421,7 @@ const copyDownloadedFile = async (download, contentPath, rootPath) => {
       .where(eq(seriesEpisodes.id, download.seriesEpisodeId))
       .limit(1);
 
-    if (!episodeData[0]) return;
+    if (!episodeData[0]) return { success: false, message: 'No episode data' };
 
     const ep = episodeData[0];
 
@@ -431,7 +432,7 @@ const copyDownloadedFile = async (download, contentPath, rootPath) => {
 
     if (!seriesData[0] || !seriesData[0].path) {
       logger.warn({ seriesId: ep.seriesId }, 'Series has no path, skipping file copy');
-      return;
+      return { success: false, message: 'Series has no path' };
     }
 
     // Construct the actual source path on our filesystem
@@ -483,19 +484,21 @@ const copyDownloadedFile = async (download, contentPath, rootPath) => {
           const correctedDestPath = path.join(destDir, correctedFilename);
           await fs.promises.copyFile(actualSourcePath, correctedDestPath);
           logger.info({ source: actualSourcePath, dest: correctedDestPath }, 'Copied downloaded file to media folder');
-          return;
+          return { success: true, message: 'Copied downloaded file to media folder' };
         }
       }
     } catch (statError) {
       logger.warn({ path: actualSourcePath, error: statError.message }, 'Cannot stat source path, skipping file copy');
-      return;
+      return { success: false, message: 'Cannot stat source path, skipping file copy' };
     }
 
     // Copy single file
     await fs.promises.copyFile(actualSourcePath, destPath);
     logger.info({ source: actualSourcePath, dest: destPath }, 'Copied downloaded file to media folder');
+    return { success: true, message: 'Copied downloaded file to media folder' };
   } catch (error) {
     logger.error({ downloadId: download.id, error: error.message }, 'Error copying downloaded file');
+    return { success: false, message: 'Error copying downloaded file' };
   }
 };
 
@@ -592,7 +595,40 @@ const syncDownloadStatuses = async () => {
 
             // Copy file from qBit download path to media folder
             logger.info({ contentPath, rootPath: torrent.root_path }, 'Download complete, copying to media folder');
-            await copyDownloadedFile(download, torrent.content_path, torrent.root_path);
+            const copyResult = await copyDownloadedFile(download, torrent.content_path, torrent.root_path);
+            if (!copyResult.success) {
+              logger.error({ downloadId: download.id, error: copyResult.message }, 'Error copying downloaded file');
+            }
+
+            // Notify Sonarr to rescan and rename after successful copy
+            if (copyResult.success && download.seriesEpisodeId) {
+              try {
+                // Look up the Sonarr series ID from the episode
+                const epRow = await db.select({ seriesId: seriesEpisodes.seriesId })
+                  .from(seriesEpisodes)
+                  .where(eq(seriesEpisodes.id, download.seriesEpisodeId))
+                  .limit(1);
+
+                if (epRow[0]) {
+                  const seriesRow = await db.select({ sonarrId: series.sonarrId })
+                    .from(series)
+                    .where(eq(series.id, epRow[0].seriesId))
+                    .limit(1);
+
+                  if (seriesRow[0]) {
+                    const sonarrId = seriesRow[0].sonarrId;
+                    // 1. Trigger rescan (refresh) so Sonarr detects the new file
+                    await sonarrService.refreshSeries(sonarrId);
+                    logger.info({ sonarrId }, 'Triggered Sonarr series refresh');
+                    // 2. Trigger rename so Sonarr renames episodes to its naming format
+                    await sonarrService.renameSeries(sonarrId);
+                    logger.info({ sonarrId }, 'Triggered Sonarr series rename');
+                  }
+                }
+              } catch (sonarrError) {
+                logger.error({ downloadId: download.id, error: sonarrError.message }, 'Error triggering Sonarr refresh/rename');
+              }
+            }
           }
 
           await db.update(seriesEpisodes)

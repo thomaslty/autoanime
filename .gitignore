@@ -46,7 +46,7 @@ temp/
 .opencode/
 
 # Sonarr
-sonarr/
+/sonarr/   
 
 # qbittorrent
 qbit_download/
