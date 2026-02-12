@@ -3,6 +3,7 @@
 Chinese Community focused anime auto download tool.
 
 ## Motivation
+Similar project that does not fit all my needs:
 - **AutoBangumi**: Mature but heavily dependant on Mikan Project
   - I would like to use dhmy as main source
   - and pick my favorite sub-group
