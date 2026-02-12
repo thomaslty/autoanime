@@ -60,6 +60,8 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
+
+      # Optional, can be set in the UI
       - SONARR_URL=${SONARR_URL:-http://sonarr:8989}
       - SONARR_API_KEY=${SONARR_API_KEY:-}
       - QBITTORRENT_URL=${QBITTORRENT_URL:-http://qbittorrent:8080}
