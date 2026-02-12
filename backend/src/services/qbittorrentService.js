@@ -620,6 +620,10 @@ const syncDownloadStatuses = async () => {
                     // 1. Trigger rescan (refresh) so Sonarr detects the new file
                     await sonarrService.refreshSeries(sonarrId);
                     logger.info({ sonarrId }, 'Triggered Sonarr series refresh');
+
+                    // 1.5 wait for 10s before triggering rename
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                    
                     // 2. Trigger rename so Sonarr renames episodes to its naming format
                     await sonarrService.renameSeries(sonarrId);
                     logger.info({ sonarrId }, 'Triggered Sonarr series rename');
