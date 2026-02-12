@@ -45,6 +45,9 @@ temp/
 # Opencode
 .opencode/
 
+# Cursor
+.cursor/
+
 # Sonarr
 /sonarr/   
 

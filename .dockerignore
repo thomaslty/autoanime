@@ -1,0 +1,35 @@
+# Dependencies
+**/node_modules
+
+# Git
+.git
+.gitignore
+
+# Dev docker files
+Dockerfile.dev
+docker-entrypoint.dev.sh
+docker-compose.dev.yml
+docker-compose.services.yml
+
+# IDE
+.vscode
+.cursor
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev/test data
+sonarr/
+qbit_data/
+qbit_download/
+
+# API docs (not needed at runtime)
+api_docs/
+
+# Misc
+*.md
+!frontend/README.md
+.env
+.env.*

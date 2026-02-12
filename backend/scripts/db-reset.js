@@ -87,7 +87,7 @@ async function resetDatabase() {
 
     const pool = new Pool({
         connectionString: info.url,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false
     });
 
     try {

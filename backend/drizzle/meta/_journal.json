@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770695808181,
-      "tag": "0000_blushing_hannibal_king",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770698011176,
-      "tag": "0001_clean_bucky",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1770850082405,
-      "tag": "0002_short_killer_shrike",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1770850865680,
-      "tag": "0003_shallow_taskmaster",
+      "when": 1770865062412,
+      "tag": "0000_loud_radioactive_man",
       "breakpoints": true
     }
   ]

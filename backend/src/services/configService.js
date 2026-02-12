@@ -81,11 +81,10 @@ const getSetting = async (key) => {
 };
 
 const getSettingWithFallback = async (key, envVarName) => {
-  const dbValue = await getSetting(key);
-  if (dbValue !== null) {
-    return dbValue;
+  if (process.env[envVarName]) {
+    return process.env[envVarName];
   }
-  return process.env[envVarName] || null;
+  return await getSetting(key) || null;
 };
 
 const setSetting = async (key, value, shouldEncrypt = null) => {

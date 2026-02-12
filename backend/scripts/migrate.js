@@ -5,10 +5,11 @@
  * This script runs drizzle-kit migrations with detailed progress logging
  */
 
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { drizzle } = require('drizzle-orm/node-postgres');
+const { migrate } = require('drizzle-orm/node-postgres/migrator');
 
 // Load environment variables
 require('dotenv').config();
@@ -52,7 +53,7 @@ async function checkDatabaseConnection() {
 
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false
   });
 
   try {
@@ -107,7 +108,7 @@ async function getAppliedMigrations() {
   const dbUrl = process.env.DATABASE_URL;
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false
   });
 
   try {
@@ -168,67 +169,36 @@ async function checkMigrationsStatus() {
 
 async function runMigrations() {
   log.step(3, 'Running migrations...');
-  log.info('Executing drizzle-kit migrate...');
+  log.info('Applying pending migrations via drizzle-orm...');
   log.divider();
-  
-  return new Promise((resolve, reject) => {
-    const migrate = spawn('npx', ['drizzle-kit', 'migrate'], {
-      cwd: path.join(__dirname, '..'),
-      stdio: 'pipe'
-    });
 
-    let output = '';
-    let errorOutput = '';
-
-    migrate.stdout.on('data', (data) => {
-      const lines = data.toString().split('\n');
-      lines.forEach(line => {
-        if (line.trim()) {
-          output += line + '\n';
-          if (line.includes('Applying')) {
-            log.info(`Applying: ${line.split('Applying')[1].trim()}`);
-          } else if (line.includes('Done')) {
-            log.success(line);
-          } else {
-            console.log(`  ${colors.dim}${line}${colors.reset}`);
-          }
-        }
-      });
-    });
-
-    migrate.stderr.on('data', (data) => {
-      const lines = data.toString().split('\n');
-      lines.forEach(line => {
-        if (line.trim()) {
-          errorOutput += line + '\n';
-          console.log(`  ${colors.yellow}${line}${colors.reset}`);
-        }
-      });
-    });
-
-    migrate.on('close', (code) => {
-      log.divider();
-      if (code === 0) {
-        log.success('Migrations completed successfully!');
-        resolve();
-      } else {
-        log.error(`Migration process exited with code ${code}`);
-        if (errorOutput.includes('ECONNREFUSED')) {
-          log.error('Database connection refused. Is PostgreSQL running?');
-        } else if (errorOutput.includes('authentication failed')) {
-          log.error('Database authentication failed. Check your credentials.');
-        } else if (errorOutput.includes('already exists')) {
-          log.warn('Some objects already exist. This might be normal if re-running migrations.');
-        }
-        reject(new Error(`Migration failed with exit code ${code}`));
-      }
-    });
-
-    migrate.on('error', (error) => {
-      log.error(`Failed to start migration process: ${error.message}`);
-      reject(error);
-    });
+  const dbUrl = process.env.DATABASE_URL;
+  const pool = new Pool({
+    connectionString: dbUrl,
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false
   });
+
+  const db = drizzle(pool);
+  const migrationsFolder = path.join(__dirname, '..', 'drizzle');
+
+  try {
+    await migrate(db, { migrationsFolder });
+    log.divider();
+    log.success('Migrations completed successfully!');
+    await pool.end();
+  } catch (error) {
+    log.divider();
+    log.error(`Migration failed: ${error.message}`);
+    if (error.message.includes('ECONNREFUSED')) {
+      log.error('Database connection refused. Is PostgreSQL running?');
+    } else if (error.message.includes('authentication failed')) {
+      log.error('Database authentication failed. Check your credentials.');
+    } else if (error.message.includes('already exists')) {
+      log.warn('Some objects already exist. This might be normal if re-running migrations.');
+    }
+    await pool.end();
+    throw error;
+  }
 }
 
 async function verifyTables() {
@@ -237,7 +207,7 @@ async function verifyTables() {
   const dbUrl = process.env.DATABASE_URL;
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false
   });
 
   try {

@@ -1,5 +1,5 @@
 {
-  "id": "e0dbc078-03f8-4990-b860-751004ce75d9",
+  "id": "ec510bb1-2329-4e4c-af7e-33a90d381757",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -26,12 +26,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "title_slug": {
-          "name": "title_slug",
-          "type": "varchar",
-          "primaryKey": false,
-          "notNull": false
-        },
         "overview": {
           "name": "overview",
           "type": "text",
@@ -40,6 +34,195 @@
         },
         "poster_path": {
           "name": "poster_path",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "season_count": {
+          "name": "season_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_episode_count": {
+          "name": "total_episode_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "episode_file_count": {
+          "name": "episode_file_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "monitored": {
+          "name": "monitored",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
+        },
+        "is_auto_download_enabled": {
+          "name": "is_auto_download_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "download_status_id": {
+          "name": "download_status_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rss_config_id": {
+          "name": "rss_config_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_synced_at": {
+          "name": "last_synced_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_series_title": {
+          "name": "idx_series_title",
+          "columns": [
+            {
+              "expression": "title",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_series_status": {
+          "name": "idx_series_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_series_last_synced": {
+          "name": "idx_series_last_synced",
+          "columns": [
+            {
+              "expression": "last_synced_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "series_download_status_id_download_status_id_fk": {
+          "name": "series_download_status_id_download_status_id_fk",
+          "tableFrom": "series",
+          "tableTo": "download_status",
+          "columnsFrom": [
+            "download_status_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "series_rss_config_id_rss_config_id_fk": {
+          "name": "series_rss_config_id_rss_config_id_fk",
+          "tableFrom": "series",
+          "tableTo": "rss_config",
+          "columnsFrom": [
+            "rss_config_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "series_sonarr_id_unique": {
+          "name": "series_sonarr_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "sonarr_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.series_metadata": {
+      "name": "series_metadata",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "series_id": {
+          "name": "series_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title_slug": {
+          "name": "title_slug",
           "type": "varchar",
           "primaryKey": false,
           "notNull": false
@@ -177,12 +360,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "varchar",
-          "primaryKey": false,
-          "notNull": false
-        },
         "profile_id": {
           "name": "profile_id",
           "type": "integer",
@@ -195,26 +372,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "season_count": {
-          "name": "season_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "episode_count": {
           "name": "episode_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "total_episode_count": {
-          "name": "total_episode_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "episode_file_count": {
-          "name": "episode_file_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -243,45 +402,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "monitored": {
-          "name": "monitored",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": true
-        },
-        "is_auto_download_enabled": {
-          "name": "is_auto_download_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false,
-          "default": false
-        },
-        "download_status_id": {
-          "name": "download_status_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rss_config_id": {
-          "name": "rss_config_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_synced_at": {
-          "name": "last_synced_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        },
         "raw_data": {
           "name": "raw_data",
           "type": "jsonb",
@@ -304,11 +424,11 @@
         }
       },
       "indexes": {
-        "idx_series_title": {
-          "name": "idx_series_title",
+        "idx_series_metadata_series": {
+          "name": "idx_series_metadata_series",
           "columns": [
             {
-              "expression": "title",
+              "expression": "series_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -319,38 +439,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_series_status": {
-          "name": "idx_series_status",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_series_last_synced": {
-          "name": "idx_series_last_synced",
-          "columns": [
-            {
-              "expression": "last_synced_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_series_imdb": {
-          "name": "idx_series_imdb",
+        "idx_series_metadata_imdb": {
+          "name": "idx_series_metadata_imdb",
           "columns": [
             {
               "expression": "imdb_id",
@@ -364,8 +454,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_series_tmdb": {
-          "name": "idx_series_tmdb",
+        "idx_series_metadata_tmdb": {
+          "name": "idx_series_metadata_tmdb",
           "columns": [
             {
               "expression": "tmdb_id",
@@ -379,8 +469,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_series_tvdb": {
-          "name": "idx_series_tvdb",
+        "idx_series_metadata_tvdb": {
+          "name": "idx_series_metadata_tvdb",
           "columns": [
             {
               "expression": "tvdb_id",
@@ -396,40 +486,27 @@
         }
       },
       "foreignKeys": {
-        "series_download_status_id_download_status_id_fk": {
-          "name": "series_download_status_id_download_status_id_fk",
-          "tableFrom": "series",
-          "tableTo": "download_status",
+        "series_metadata_series_id_series_id_fk": {
+          "name": "series_metadata_series_id_series_id_fk",
+          "tableFrom": "series_metadata",
+          "tableTo": "series",
           "columnsFrom": [
-            "download_status_id"
+            "series_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "series_rss_config_id_rss_config_id_fk": {
-          "name": "series_rss_config_id_rss_config_id_fk",
-          "tableFrom": "series",
-          "tableTo": "rss_config",
-          "columnsFrom": [
-            "rss_config_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "series_sonarr_id_unique": {
-          "name": "series_sonarr_id_unique",
+        "series_metadata_series_id_unique": {
+          "name": "series_metadata_series_id_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "sonarr_id"
+            "series_id"
           ]
         }
       },
@@ -907,8 +984,14 @@
           "notNull": false,
           "default": "'0'"
         },
-        "file_path": {
-          "name": "file_path",
+        "content_path": {
+          "name": "content_path",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "root_path": {
+          "name": "root_path",
           "type": "varchar",
           "primaryKey": false,
           "notNull": false

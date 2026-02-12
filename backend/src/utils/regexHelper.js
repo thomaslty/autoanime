@@ -105,13 +105,17 @@ const extractEpisodeNumber = (title) => {
 /**
  * Calculates the actual episode number by applying offset
  * When offset = 13 and RSS has episode 18, actual episode = 18 - 13 = 5
+ * If the result is less than 1, returns the rssEpisodeNumber directly
  * @param {number} rssEpisodeNumber - Episode number from RSS feed
  * @param {number|null} offset - Offset to subtract
  * @returns {number} - The actual episode number
  */
 const calculateActualEpisode = (rssEpisodeNumber, offset) => {
   if (!offset) return rssEpisodeNumber;
-  return rssEpisodeNumber - offset;
+  const actualEpisode = rssEpisodeNumber - offset;
+  // If offset calculation results in negative episode, use RSS episode directly
+  if (actualEpisode < 1) return rssEpisodeNumber;
+  return actualEpisode;
 };
 
 /**

@@ -1,35 +1,29 @@
 services:
-  frontend:
+  autoanime:
     build:
-      context: ./frontend
+      context: .
       dockerfile: Dockerfile
-    ports:
-      - "5173:80"
-    depends_on:
-      - backend
-    networks:
-      - autoanime-network
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    container_name: autoanime
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3001
       - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
-      - SONARR_URL=${SONARR_URL:-http://localhost:8989}
+      - SONARR_URL=${SONARR_URL:-http://sonarr:8989}
       - SONARR_API_KEY=${SONARR_API_KEY:-}
+      - QBITTORRENT_URL=${QBITTORRENT_URL:-http://qbittorrent:8080}
+      - QBITTORRENT_USERNAME=${QBITTORRENT_USERNAME:-admin}
+      - QBITTORRENT_PASSWORD=${QBITTORRENT_PASSWORD:-adminadmin}
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
+    restart: unless-stopped
     networks:
       - autoanime-network
 
   postgres:
     image: postgres:16-alpine
+    container_name: autoanime-postgres
     ports:
       - "5432:5432"
     environment:
@@ -43,6 +37,54 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - autoanime-network
+
+  
+  # Dev
+  adminer:
+    image: adminer
+    container_name: adminer
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    networks:
+      - autoanime-network
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=6881
+    volumes:
+      - ./qbit_data:/config
+      - ./qbit_download:/downloads #optional
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+    networks:
+      - autoanime-network
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0.16
+    container_name: sonarr-anime
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Toronto
+    volumes:
+      - ./sonarr/config:/config
+      - ./sonarr/media:/media #optional
+    ports:
+      - 8989:8989
+    restart: unless-stopped
     networks:
       - autoanime-network
 
