@@ -112,10 +112,7 @@ const extractEpisodeNumber = (title) => {
  */
 const calculateActualEpisode = (rssEpisodeNumber, offset) => {
   if (!offset) return rssEpisodeNumber;
-  const actualEpisode = rssEpisodeNumber - offset;
-  // If offset calculation results in negative episode, use RSS episode directly
-  if (actualEpisode < 1) return rssEpisodeNumber;
-  return actualEpisode;
+  return rssEpisodeNumber - offset;
 };
 
 /**

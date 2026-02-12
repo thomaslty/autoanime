@@ -89,8 +89,10 @@ const previewConfig = async (rssSourceId, regex, offset = null) => {
       if (rssEpisode !== null) {
         // Calculate actual episode using offset
         const actualEpisode = calculateActualEpisode(rssEpisode, offset);
-        // Format as Exx
-        matchedEpisode = `E${String(actualEpisode).padStart(2, '0')}`;
+        // Skip off-season episodes (negative or zero)
+        if (actualEpisode >= 1) {
+          matchedEpisode = `E${String(actualEpisode).padStart(2, '0')}`;
+        }
       }
 
       return {
@@ -164,6 +166,9 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
 
       // Calculate actual episode number using offset
       const actualEpisodeNumber = calculateActualEpisode(rssEpisodeNumber, config.offset);
+
+      // Skip off-season episodes (negative or zero)
+      if (actualEpisodeNumber < 1) continue;
 
       // Find matching episode
       const matchingEpisode = episodes.find(ep =>
