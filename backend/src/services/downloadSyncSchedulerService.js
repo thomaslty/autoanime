@@ -8,6 +8,8 @@ const runDownloadSync = async () => {
     const syncResult = await qbittorrentService.syncDownloadStatuses();
     if (syncResult.synced > 0) {
       logger.info({ synced: syncResult.synced }, 'Download statuses synced from qBittorrent');
+    } else {
+      logger.info('Download Sync tick — nothing to sync');
     }
   } catch (error) {
     logger.error({ error: error.message }, 'Failed to sync download statuses');

@@ -9,7 +9,10 @@ let schedulerInterval = null;
  */
 const fetchAndParseAllRss = async () => {
   const overdueFeeds = await getOverdueFeeds();
-  if (overdueFeeds.length === 0) return { fetched: 0 };
+  if (overdueFeeds.length === 0) {
+    logger.info('RSS Fetch Scheduler tick — no overdue feeds');
+    return { fetched: 0 };
+  }
 
   logger.info({ feedCount: overdueFeeds.length }, 'Fetching overdue feeds');
   let fetched = 0;

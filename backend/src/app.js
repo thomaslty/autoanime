@@ -327,7 +327,7 @@ const startServer = async () => {
     logger.warn('Database connection failed, starting without DB sync');
   } else {
     await seedReferenceTables();
-    await syncOnStartup();
+    // await syncOnStartup();
     startRssFetchScheduler();
     startRssMatchingScheduler();
     startDownloadScheduler();

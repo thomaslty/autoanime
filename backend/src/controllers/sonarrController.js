@@ -1,7 +1,7 @@
 const sonarrService = require('../services/sonarrService');
 const { db } = require('../db/db');
 const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
-const { eq, and } = require('drizzle-orm');
+const { eq, and, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 
 const extractImageUrl = (images, coverType) => {
@@ -656,10 +656,28 @@ const deleteSeries = async (req, res) => {
       return res.status(404).json({ error: 'Series not found' });
     }
 
-    await db.delete(downloads).where(eq(downloads.seriesEpisodeId, seriesId));
+    // Get all episode IDs for this series to clean up downloads
+    const episodes = await db.select({ id: seriesEpisodes.id })
+      .from(seriesEpisodes)
+      .where(eq(seriesEpisodes.seriesId, seriesId));
+    const episodeIds = episodes.map(e => e.id);
 
+    // Delete downloads linked to this series' episodes
+    if (episodeIds.length > 0) {
+      await db.delete(downloads).where(inArray(downloads.seriesEpisodeId, episodeIds));
+    }
+
+    // Delete all child tables explicitly
+    await db.delete(seriesEpisodes).where(eq(seriesEpisodes.seriesId, seriesId));
+    await db.delete(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
+    await db.delete(seriesImages).where(eq(seriesImages.seriesId, seriesId));
+    await db.delete(seriesAlternateTitles).where(eq(seriesAlternateTitles.seriesId, seriesId));
+    await db.delete(seriesMetadata).where(eq(seriesMetadata.seriesId, seriesId));
+
+    // Finally delete the series itself
     await db.delete(series).where(eq(series.id, seriesId));
 
+    logger.info({ seriesId }, 'Series and all related records deleted');
     res.json({ success: true, message: 'Series and all related records deleted successfully' });
   } catch (error) {
     logger.error({ error: error.message }, 'Error deleting series');

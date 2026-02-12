@@ -1,6 +1,6 @@
 const { db } = require('../db/db');
 const { seriesEpisodes, rssItem, downloads, downloadStatus } = require('../db/schema');
-const { eq, and, isNull, isNotNull } = require('drizzle-orm');
+const { eq, and, isNull, isNotNull, or } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 const qbittorrentService = require('./qbittorrentService');
 const { getInfoHash } = require('../utils/magnetHelper');
@@ -114,11 +114,14 @@ const triggerPendingDownloads = async () => {
       .where(and(
         eq(seriesEpisodes.isAutoDownloadEnabled, true),
         eq(seriesEpisodes.hasFile, false),
-        isNull(seriesEpisodes.downloadStatusId),
+        or(isNull(seriesEpisodes.downloadStatusId), eq(seriesEpisodes.downloadStatusId, statusIds['PENDING'])),
         isNotNull(seriesEpisodes.rssItemId)
       ));
 
-    if (pendingEpisodes.length === 0) return { triggered: 0 };
+    if (pendingEpisodes.length === 0) {
+      logger.info('Download Scheduler tick — no pending downloads');
+      return { triggered: 0 };
+    }
 
     let triggeredCount = 0;
 

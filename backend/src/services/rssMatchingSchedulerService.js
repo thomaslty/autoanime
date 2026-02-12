@@ -153,6 +153,8 @@ const matchAllRssItems = async () => {
 
     if (matchedCount > 0) {
       logger.info({ matchedCount }, 'RSS matching complete');
+    } else {
+      logger.info('RSS Matching Scheduler tick — no new matches');
     }
     return { matched: matchedCount };
   } catch (error) {
