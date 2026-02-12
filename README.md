@@ -43,7 +43,66 @@ Similar project that does not fit all my needs:
 ### Settings
 ![Settings](/images/settings.JPG)
 
+
 ## Getting Started
+
+Docker compose is the recommended way to run the application.
+```
+services:
+  autoanime:
+    image: ghcr.io/thomaslty/autoanime:latest
+    container_name: autoanime
+    ports:
+      - "3000:3000"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://autoanime:autoanime@postgres:5432/autoanime
+      - SONARR_URL=${SONARR_URL:-http://sonarr:8989}
+      - SONARR_API_KEY=${SONARR_API_KEY:-}
+      - QBITTORRENT_URL=${QBITTORRENT_URL:-http://qbittorrent:8080}
+      - QBITTORRENT_USERNAME=${QBITTORRENT_USERNAME:-admin}
+      - QBITTORRENT_PASSWORD=${QBITTORRENT_PASSWORD:-adminadmin}
+    volumes:
+      - ./sonarr/media:/media
+      - ./qbit_download:/downloads
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - autoanime-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: autoanime-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=autoanime
+      - POSTGRES_PASSWORD=autoanime
+      - POSTGRES_DB=autoanime
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoanime"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - autoanime-network
+
+volumes:
+  postgres_data:
+
+networks:
+  autoanime-network:
+    driver: bridge
+```
+
+## Development
 
 ### Prerequisites
 
