@@ -60,70 +60,49 @@ Chinese Community focused anime auto download tool.
    ```
 
 ### Docker Development
-
-Run the entire stack with Docker:
-
 ```bash
-# Development mode (with hot reload)
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-
-# Production mode
-docker-compose up --build
+docker compose up -d --build
 ```
 
 ### Access the Application
 
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:3000
-- API Health Check: http://localhost:3000/health
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api` | GET | API info |
-| `/api/rss` | GET | List all RSS feeds |
-| `/api/rss/:id` | GET | Get RSS feed by ID |
-| `/api/rss` | POST | Create RSS feed |
-| `/api/rss/:id` | PUT | Update RSS feed |
-| `/api/rss/:id` | DELETE | Delete RSS feed |
-| `/api/rss/:id/refresh` | POST | Refresh RSS feed |
-| `/api/sonarr/status` | GET | Sonarr connection status |
-| `/api/sonarr/series` | GET | List Sonarr series |
-| `/api/sonarr/series` | POST | Add series to Sonarr |
+- Health check: http://localhost:3000/health
 
 ## Project Structure
 
 ```
 autoanime/
-├── frontend/                 # Vite + React app
+├── frontend/                 # React SPA with React Router
 │   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   ├── utils/
+│   │   ├── components/      # Reusable UI + shadcn/ui wrappers in components/ui/
+│   │   ├── pages/           # Full page views (Home, RSS, SeriesDetail, Settings)
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── lib/             # Utilities (cn for className merging)
 │   │   ├── App.jsx
 │   │   └── main.jsx
-│   ├── Dockerfile
-│   └── Dockerfile.dev
 │
-├── backend/                  # Express.js API
+├── backend/                  # Express.js MVC pattern
 │   ├── src/
-│   │   ├── routes/
-│   │   ├── controllers/
-│   │   ├── services/
-│   │   ├── models/
+│   │   ├── routes/          # API route definitions
+│   │   ├── controllers/     # Request handlers
+│   │   ├── services/        # Business logic
+│   │   ├── db/              # Drizzle ORM schema and migrations
+│   │   ├── rss_parsers/     # Extensible parser system (BaseParser + DmhyParser)
+│   │   ├── enums/           # Constants (RssTemplate, AutoDownloadStatus)
 │   │   ├── middleware/
 │   │   ├── config/
 │   │   └── app.js
-│   ├── Dockerfile
-│   └── Dockerfile.dev
 │
+├── api_docs/                 # API documentation
 ├── docker-compose.yml
-├── docker-compose.dev.yml
 └── .env.example
 ```
+
+**Database**: PostgreSQL via Drizzle ORM
+- Schema: `backend/src/db/schema.js`
+- Core tables: `series`, `series_seasons`, `series_episodes`, `series_images`, `rss`, `rss_item`, `qbittorrent_downloads`, `settings`
 
 ## License
 
