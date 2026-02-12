@@ -73,6 +73,8 @@ services:
     restart: unless-stopped
     networks:
       - autoanime-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   postgres:
     image: postgres:16-alpine
@@ -100,6 +102,16 @@ volumes:
 networks:
   autoanime-network:
     driver: bridge
+```
+
+Create environment file (.env) with the following variables
+or you can remove all the environment variables and setup in the UI.
+```
+SONARR_URL=http://host.docker.internal:8989
+SONARR_API_KEY=your_sonarr_api_key_here
+QBITTORRENT_URL=http://host.docker.internal:8080
+QBITTORRENT_USERNAME=admin
+QBITTORRENT_PASSWORD=adminadmin
 ```
 
 ## Development
