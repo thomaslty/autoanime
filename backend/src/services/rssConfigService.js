@@ -134,20 +134,20 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
     }
 
     // Get episodes for this series/season
-    let episodeQuery = db.select({
+    // IMPORTANT: Must use and() to combine conditions. Chaining .where() in Drizzle
+    // replaces the previous clause instead of ANDing, which would drop the seriesId filter.
+    const episodeConditions = [eq(seriesEpisodes.seriesId, seriesId)];
+    if (seasonNumber !== null) {
+      episodeConditions.push(eq(seriesEpisodes.seasonNumber, seasonNumber));
+    }
+
+    const episodes = await db.select({
       id: seriesEpisodes.id,
       episodeNumber: seriesEpisodes.episodeNumber,
       seasonNumber: seriesEpisodes.seasonNumber,
     })
       .from(seriesEpisodes)
-      .where(eq(seriesEpisodes.seriesId, seriesId));
-
-    if (seasonNumber !== null) {
-      episodeQuery = episodeQuery.where(eq(seriesEpisodes.seasonNumber, seasonNumber));
-    }
-
-    const episodes = await episodeQuery;
-    const qbittorrentService = require('./qbittorrentService');
+      .where(and(...episodeConditions));
 
     let matchedCount = 0;
     let downloadedCount = 0;
@@ -178,9 +178,11 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
 
       if (!matchingEpisode) continue;
 
-      // Update episode with RSS item link
+      // Update episode with RSS item link and set downloadStatusId if auto-download is enabled
+      // Setting downloadStatusId here prevents the download scheduler from double-triggering
+      const episodeUpdate = { rssItemId: item.id, updatedAt: now };
       await db.update(seriesEpisodes)
-        .set({ rssItemId: item.id, updatedAt: now })
+        .set(episodeUpdate)
         .where(eq(seriesEpisodes.id, matchingEpisode.id));
 
       matchedCount++;
@@ -193,31 +195,15 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
       }, 'Historical RSS item matched to episode');
 
       // Trigger download if auto-download is enabled
+      // Reuse triggerEpisodeDownload for consistent episode status updates and conflict handling
       if (isAutoDownloadEnabled) {
-        const result = await qbittorrentService.addMagnet(item.magnetLink);
-        if (result.success) {
+        const { triggerEpisodeDownload } = require('./downloadSchedulerService');
+        const downloadResult = await triggerEpisodeDownload(matchingEpisode, item, statusIds);
+        if (downloadResult.success) {
           downloadedCount++;
-          
-          // Extract torrent hash and create download record
-          const torrentHash = getInfoHash(item.magnetLink);
-          
-          if (torrentHash) {
-            await db.insert(downloads).values({
-              torrentHash,
-              magnetLink: item.magnetLink,
-              seriesEpisodeId: matchingEpisode.id,
-              rssItemId: item.id,
-              category: 'autoanime',
-              downloadStatusId: statusIds['DOWNLOADING'],
-              name: item.title,
-              createdAt: now,
-              updatedAt: now
-            }).onConflictDoNothing();
-          }
-          
           logger.info({ item: item.title, seriesId, seasonNumber }, 'Auto-download triggered for historical item');
         } else {
-          logger.error({ item: item.title, error: result.message }, 'Auto-download failed for historical item');
+          logger.error({ item: item.title, error: downloadResult.message }, 'Auto-download failed for historical item');
         }
       }
     }
@@ -262,15 +248,10 @@ const assignToSeason = async (seriesId, seasonNumber, configId) => {
   // Trigger historical RSS matching if config was assigned
   if (configId && updatedSeason) {
     const config = await getConfigById(configId);
-    // Get series to check auto-download status
-    const seriesData = await db.select({ isAutoDownloadEnabled: series.isAutoDownloadEnabled })
-      .from(series)
-      .where(eq(series.id, seriesId))
-      .limit(1);
 
-    if (config && seriesData[0]) {
-      // Run in background - don't await
-      processHistoricalRssItems(config, seriesId, seasonNumber, seriesData[0].isAutoDownloadEnabled)
+    if (config) {
+      // Use season-level auto-download flag, not the series-level flag
+      processHistoricalRssItems(config, seriesId, seasonNumber, updatedSeason.isAutoDownloadEnabled)
         .catch(err => logger.error({ error: err.message }, 'Background historical RSS processing failed'));
     }
   }

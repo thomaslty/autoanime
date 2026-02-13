@@ -62,7 +62,7 @@ const triggerEpisodeDownload = async (episode, rssItemData, statusIds) => {
     .where(eq(seriesEpisodes.id, episode.id));
   logger.info({ episodeId: episode.id }, '[triggerEpisodeDownload] Episode status updated');
 
-  // Insert download record
+  // Insert download record with conflict-aware handling
   if (torrentHash) {
     logger.info({
       episodeId: episode.id,
@@ -70,19 +70,65 @@ const triggerEpisodeDownload = async (episode, rssItemData, statusIds) => {
       rssItemId: rssItemData.id
     }, '[triggerEpisodeDownload] Inserting into downloads table');
 
-    await db.insert(downloads).values({
-      torrentHash,
-      magnetLink: rssItemData.magnetLink,
-      seriesEpisodeId: episode.id,
-      rssItemId: rssItemData.id,
-      category: 'autoanime',
-      downloadStatusId: statusIds['DOWNLOADING'],
-      name: rssItemData.title,
-      createdAt: now,
-      updatedAt: now
-    }).onConflictDoNothing();
+    // Check for existing download record with the same torrent hash
+    const existingDownload = await db.select({
+      id: downloads.id,
+      seriesEpisodeId: downloads.seriesEpisodeId,
+      downloadStatusId: downloads.downloadStatusId,
+    })
+      .from(downloads)
+      .where(eq(downloads.torrentHash, torrentHash))
+      .limit(1);
 
-    logger.info({ episodeId: episode.id, torrentHash }, '[triggerEpisodeDownload] Download record inserted');
+    if (existingDownload.length > 0) {
+      const existing = existingDownload[0];
+      if (existing.seriesEpisodeId === episode.id) {
+        // Same episode -- idempotent, just ensure status is DOWNLOADING
+        await db.update(downloads)
+          .set({ downloadStatusId: statusIds['DOWNLOADING'], updatedAt: now })
+          .where(eq(downloads.id, existing.id));
+        logger.info({ episodeId: episode.id, torrentHash }, '[triggerEpisodeDownload] Download record already exists for same episode, updated status');
+      } else if (existing.downloadStatusId === statusIds['DOWNLOADED'] || existing.downloadStatusId === statusIds['FAILED']) {
+        // Different episode, but existing record is in terminal state -- take over
+        await db.update(downloads)
+          .set({
+            seriesEpisodeId: episode.id,
+            rssItemId: rssItemData.id,
+            magnetLink: rssItemData.magnetLink,
+            downloadStatusId: statusIds['DOWNLOADING'],
+            name: rssItemData.title,
+            updatedAt: now
+          })
+          .where(eq(downloads.id, existing.id));
+        logger.warn({
+          episodeId: episode.id,
+          previousEpisodeId: existing.seriesEpisodeId,
+          torrentHash
+        }, '[triggerEpisodeDownload] Took over download record from different episode (was in terminal state)');
+      } else {
+        // Different episode, still actively downloading -- conflict, skip
+        logger.warn({
+          episodeId: episode.id,
+          conflictingEpisodeId: existing.seriesEpisodeId,
+          torrentHash,
+          existingStatus: existing.downloadStatusId
+        }, '[triggerEpisodeDownload] Torrent hash conflict with active download for different episode, skipping');
+      }
+    } else {
+      // No existing record -- insert normally
+      await db.insert(downloads).values({
+        torrentHash,
+        magnetLink: rssItemData.magnetLink,
+        seriesEpisodeId: episode.id,
+        rssItemId: rssItemData.id,
+        category: 'autoanime',
+        downloadStatusId: statusIds['DOWNLOADING'],
+        name: rssItemData.title,
+        createdAt: now,
+        updatedAt: now
+      });
+      logger.info({ episodeId: episode.id, torrentHash }, '[triggerEpisodeDownload] Download record inserted');
+    }
   } else {
     logger.warn({ episodeId: episode.id }, '[triggerEpisodeDownload] No torrent hash, skipping downloads table insert');
   }
