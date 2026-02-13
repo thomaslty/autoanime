@@ -106,23 +106,21 @@ const previewConfig = async (rssSourceId, regex, offset = null) => {
 };
 
 /**
- * Process historical RSS items for a specific series/season configuration
- * This matches existing RSS items against episodes and triggers downloads if enabled
+ * Process historical RSS items for a specific series/season configuration.
+ * This ONLY matches RSS items to episodes (sets rssItemId). It never triggers downloads.
+ * The download scheduler is the single owner of download triggering, which eliminates
+ * race conditions between this function and the scheduler competing to insert download records.
  * @param {Object} config - RSS config object with regex, offset, rssSourceId
  * @param {number} seriesId - Series ID
  * @param {number|null} seasonNumber - Season number (null for series-level)
- * @param {boolean} isAutoDownloadEnabled - Whether auto-download is enabled
  */
-const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoDownloadEnabled) => {
+const processHistoricalRssItems = async (config, seriesId, seasonNumber) => {
   if (!config || !config.regex || !config.rssSourceId) {
     logger.info({ seriesId, seasonNumber }, 'Skipping historical RSS processing - no valid config');
-    return { matched: 0, downloaded: 0 };
+    return { matched: 0 };
   }
 
   try {
-    // Get download status IDs
-    const statusIds = await getDownloadStatusIds();
-    
     // Get RSS items from the configured source
     const rssItems = await db.select()
       .from(rssItem)
@@ -130,7 +128,7 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
 
     if (rssItems.length === 0) {
       logger.info({ seriesId, rssSourceId: config.rssSourceId }, 'No RSS items found for source');
-      return { matched: 0, downloaded: 0 };
+      return { matched: 0 };
     }
 
     // Get episodes for this series/season
@@ -150,7 +148,6 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
       .where(and(...episodeConditions));
 
     let matchedCount = 0;
-    let downloadedCount = 0;
     const now = new Date();
 
     for (const item of rssItems) {
@@ -178,11 +175,9 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
 
       if (!matchingEpisode) continue;
 
-      // Update episode with RSS item link and set downloadStatusId if auto-download is enabled
-      // Setting downloadStatusId here prevents the download scheduler from double-triggering
-      const episodeUpdate = { rssItemId: item.id, updatedAt: now };
+      // Only set the rssItemId link — downloads are handled by the download scheduler
       await db.update(seriesEpisodes)
-        .set(episodeUpdate)
+        .set({ rssItemId: item.id, updatedAt: now })
         .where(eq(seriesEpisodes.id, matchingEpisode.id));
 
       matchedCount++;
@@ -193,26 +188,13 @@ const processHistoricalRssItems = async (config, seriesId, seasonNumber, isAutoD
         rssItemId: item.id,
         title: item.title
       }, 'Historical RSS item matched to episode');
-
-      // Trigger download if auto-download is enabled
-      // Reuse triggerEpisodeDownload for consistent episode status updates and conflict handling
-      if (isAutoDownloadEnabled) {
-        const { triggerEpisodeDownload } = require('./downloadSchedulerService');
-        const downloadResult = await triggerEpisodeDownload(matchingEpisode, item, statusIds);
-        if (downloadResult.success) {
-          downloadedCount++;
-          logger.info({ item: item.title, seriesId, seasonNumber }, 'Auto-download triggered for historical item');
-        } else {
-          logger.error({ item: item.title, error: downloadResult.message }, 'Auto-download failed for historical item');
-        }
-      }
     }
 
-    logger.info({ seriesId, seasonNumber, matched: matchedCount, downloaded: downloadedCount }, 'Historical RSS processing complete');
-    return { matched: matchedCount, downloaded: downloadedCount };
+    logger.info({ seriesId, seasonNumber, matched: matchedCount }, 'Historical RSS processing complete');
+    return { matched: matchedCount };
   } catch (error) {
     logger.error({ error: error.message, seriesId, seasonNumber }, 'Error processing historical RSS items');
-    return { matched: 0, downloaded: 0, error: error.message };
+    return { matched: 0, error: error.message };
   }
 };
 
@@ -228,8 +210,9 @@ const assignToSeries = async (seriesId, configId) => {
   if (configId && updatedSeries) {
     const config = await getConfigById(configId);
     if (config) {
-      // Run in background - don't await
-      processHistoricalRssItems(config, seriesId, null, updatedSeries.isAutoDownloadEnabled)
+      // Run in background - don't await. Only matches RSS items to episodes.
+      // Downloads are triggered by the download scheduler on its next tick.
+      processHistoricalRssItems(config, seriesId, null)
         .catch(err => logger.error({ error: err.message }, 'Background historical RSS processing failed'));
     }
   }
@@ -250,8 +233,9 @@ const assignToSeason = async (seriesId, seasonNumber, configId) => {
     const config = await getConfigById(configId);
 
     if (config) {
-      // Use season-level auto-download flag, not the series-level flag
-      processHistoricalRssItems(config, seriesId, seasonNumber, updatedSeason.isAutoDownloadEnabled)
+      // Only matches RSS items to episodes.
+      // Downloads are triggered by the download scheduler on its next tick.
+      processHistoricalRssItems(config, seriesId, seasonNumber)
         .catch(err => logger.error({ error: err.message }, 'Background historical RSS processing failed'));
     }
   }
