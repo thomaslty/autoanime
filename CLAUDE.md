@@ -83,6 +83,13 @@ cd frontend && npx shadcn@latest add <component-name>
 > const query = db.select().from(table).where(and(...conditions));
 > ```
 
+## Dev Procedure
+
+After finishing coding, rebuild and test with Docker:
+```bash
+docker compose down && docker compose up --build
+```
+
 ## Access Points
 
 - Frontend: http://localhost:5173
