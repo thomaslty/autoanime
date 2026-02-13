@@ -1,22 +1,17 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, Link, useNavigate } from "react-router"
 import { Layout } from "../components/Layout"
 import { SeasonCard } from "../components/SeasonCard"
-import { SearchableSelect } from "../components/SearchableSelect"
 import { ArrowLeft, RefreshCw, Settings, AlertCircle, WifiOff, Download, Rss, ChevronDown, Eye, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Input } from "@/components/ui/input"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog"
+import { RssFilterDialog } from "@/components/dialogs/RssFilterDialog"
+import { RssMatchesDialog } from "@/components/dialogs/RssMatchesDialog"
 // WebSocket-based hook disabled — using polling instead
 // import { useDownloadStatus } from "@/hooks/useDownloadStatus"
 import { useDownloadPolling } from "@/hooks/useDownloadPolling"
@@ -57,32 +52,11 @@ export function SeriesDetailPage() {
   const [downloadStatus, setDownloadStatus] = useState(null)
   const [showRssModal, setShowRssModal] = useState(false)
   const [rssConfigs, setRssConfigs] = useState([])
-  const [seriesRssConfigId, setSeriesRssConfigId] = useState("")
-  const [seasonRssConfigs, setSeasonRssConfigs] = useState({})
   const [savingRss, setSavingRss] = useState(false)
-  const [resettingRss, setResettingRss] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
-  const [previewData, setPreviewData] = useState([])
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [applyingMatches, setApplyingMatches] = useState(false)
-  const [previewSearch, setPreviewSearch] = useState("")
-  const [previewSort, setPreviewSort] = useState({ field: 'seasonNumber', dir: 'desc' })
-  const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [showApplyConfirm, setShowApplyConfirm] = useState(false)
-  const [updatingEpisodeIds, setUpdatingEpisodeIds] = useState(new Set())
-  const [downloadingEpisodeIds, setDownloadingEpisodeIds] = useState(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingSeries, setDeletingSeries] = useState(false)
   const navigate = useNavigate()
-
-  const seriesRssItems = useMemo(() =>
-    [{ label: "No config", value: "none" }, ...rssConfigs.map(c => ({ label: c.name, value: String(c.id) }))],
-    [rssConfigs]
-  )
-  const seasonRssItems = useMemo(() =>
-    [{ label: "Use series config", value: "none" }, ...rssConfigs.map(c => ({ label: c.name, value: String(c.id) }))],
-    [rssConfigs]
-  )
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -285,22 +259,13 @@ export function SeriesDetailPage() {
       if (configsRes.ok) {
         setRssConfigs(await configsRes.json())
       }
-      // Initialize from current series data
-      setSeriesRssConfigId(series?.rssConfigId ? String(series.rssConfigId) : "none")
-      const seasonMap = {}
-      if (series?.seasons) {
-        for (const s of series.seasons) {
-          if (s.rssConfigId) seasonMap[s.seasonNumber] = String(s.rssConfigId)
-        }
-      }
-      setSeasonRssConfigs(seasonMap)
       setShowRssModal(true)
     } catch (err) {
       console.error("Error loading RSS configs:", err)
     }
   }
 
-  const handleSaveRssConfig = async () => {
+  const handleSaveRssConfig = async ({ seriesRssConfigId, seasonRssConfigs }) => {
     setSavingRss(true)
     try {
       // Save series-level config
@@ -334,139 +299,6 @@ export function SeriesDetailPage() {
     }
   }
 
-  const handleResetRssMatches = async () => {
-    setShowResetConfirm(false)
-    setResettingRss(true)
-    try {
-      const response = await fetch(`/api/sonarr/series/${id}/rss-matches/reset`, { method: "POST" })
-      if (!response.ok) {
-        throw new Error("Failed to reset RSS matches")
-      }
-      // Refresh series data to reflect changes if any (though primarily affects episodes table)
-      handleRefresh()
-    } catch (err) {
-      console.error("Error resetting RSS matches:", err)
-    } finally {
-      setResettingRss(false)
-    }
-  }
-
-  const fetchPreviewData = async () => {
-    setPreviewLoading(true)
-    try {
-      const response = await fetch(`/api/rss-config/preview/series/${id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setPreviewData(data.data || [])
-      } else {
-        console.error("Failed to fetch preview")
-        setPreviewData([])
-      }
-    } catch (err) {
-      console.error("Error fetching preview:", err)
-      setPreviewData([])
-    } finally {
-      setPreviewLoading(false)
-    }
-  }
-
-  const handleApplyMatches = async () => {
-    setShowApplyConfirm(false)
-    setApplyingMatches(true)
-    try {
-      const response = await fetch(`/api/rss-config/preview/series/${id}/apply`, { method: "POST" })
-      if (!response.ok) {
-        throw new Error("Failed to apply matches")
-      }
-      const data = await response.json()
-      // Refresh preview to show updated status
-      fetchPreviewData()
-      // Also refresh series data to keep everything in sync
-      handleRefresh()
-      // Optional: Show success message or toast
-    } catch (err) {
-      console.error("Error applying matches:", err)
-    } finally {
-      setApplyingMatches(false)
-    }
-  }
-
-  const handleLinkEpisode = async (episodeId, rssItemId) => {
-    setUpdatingEpisodeIds(prev => new Set(prev).add(episodeId))
-    try {
-      const response = await fetch(`/api/sonarr/episodes/${episodeId}/rss-item`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rssItemId })
-      })
-      if (!response.ok) {
-        throw new Error("Failed to link episode")
-      }
-      // Refresh preview to show updated status
-      fetchPreviewData()
-    } catch (err) {
-      console.error("Error linking episode:", err)
-    } finally {
-      setUpdatingEpisodeIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(episodeId)
-        return newSet
-      })
-    }
-  }
-
-  const handleUnlinkEpisode = async (episodeId) => {
-    setUpdatingEpisodeIds(prev => new Set(prev).add(episodeId))
-    try {
-      const response = await fetch(`/api/sonarr/episodes/${episodeId}/rss-item`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rssItemId: null })
-      })
-      if (!response.ok) {
-        throw new Error("Failed to unlink episode")
-      }
-      // Refresh preview to show updated status
-      fetchPreviewData()
-    } catch (err) {
-      console.error("Error unlinking episode:", err)
-    } finally {
-      setUpdatingEpisodeIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(episodeId)
-        return newSet
-      })
-    }
-  }
-
-  const handleDownloadEpisode = async (episodeId) => {
-    setDownloadingEpisodeIds(prev => new Set(prev).add(episodeId))
-    try {
-      const response = await fetch(`/api/sonarr/episodes/${episodeId}/download`, {
-        method: "POST"
-      })
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to download episode")
-      }
-      // Optional: Show success message
-      console.log("Download started successfully")
-    } catch (err) {
-      console.error("Error downloading episode:", err)
-      // Optional: Show error toast
-    } finally {
-      setDownloadingEpisodeIds(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(episodeId)
-        return newSet
-      })
-    }
-  }
-
-  const openPreviewModal = () => {
-    setShowPreviewModal(true)
-  }
-
   const handleDeleteSeries = async () => {
     setDeletingSeries(true)
     try {
@@ -484,12 +316,6 @@ export function SeriesDetailPage() {
       setShowDeleteConfirm(false)
     }
   }
-
-  useEffect(() => {
-    if (showPreviewModal) {
-      fetchPreviewData()
-    }
-  }, [showPreviewModal])
 
   const serviceError = getServiceError()
 
@@ -616,7 +442,7 @@ export function SeriesDetailPage() {
                       <Rss size={16} className="mr-2" />
                       Configure RSS
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={openPreviewModal}>
+                    <DropdownMenuItem onClick={() => setShowPreviewModal(true)}>
                       <Eye size={16} className="mr-2" />
                       Configure RSS Matches
                     </DropdownMenuItem>
@@ -751,300 +577,42 @@ export function SeriesDetailPage() {
         )}
       </div>
 
-      {/* RSS Config Modal */}
-      <Dialog open={showRssModal} onOpenChange={setShowRssModal}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Rss size={18} />
-              Configure RSS Filter
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Series-level RSS Config</Label>
-              <SearchableSelect
-                items={seriesRssItems}
-                value={seriesRssConfigId || "none"}
-                onChange={setSeriesRssConfigId}
-              />
-              <p className="text-xs text-muted-foreground">Applied to all seasons unless overridden</p>
-            </div>
+      <RssFilterDialog
+        open={showRssModal}
+        onOpenChange={setShowRssModal}
+        series={series}
+        rssConfigs={rssConfigs}
+        initialSeriesConfigId={series?.rssConfigId ? String(series.rssConfigId) : "none"}
+        initialSeasonConfigs={(() => {
+          const map = {}
+          if (series?.seasons) {
+            for (const s of series.seasons) {
+              if (s.rssConfigId) map[s.seasonNumber] = String(s.rssConfigId)
+            }
+          }
+          return map
+        })()}
+        onSave={handleSaveRssConfig}
+        saving={savingRss}
+      />
 
-            {series?.seasons?.filter(s => s.monitored).length > 0 && (
-              <div className="space-y-3">
-                <Label>Per-Season Overrides</Label>
-                {series.seasons
-                  .filter(s => s.monitored)
-                  .sort((a, b) => b.seasonNumber - a.seasonNumber)
-                  .map(season => (
-                    <div key={season.seasonNumber} className="flex items-center gap-3">
-                      <span className="text-sm w-24 shrink-0">
-                        {season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}
-                      </span>
-                      <SearchableSelect
-                        items={seasonRssItems}
-                        value={seasonRssConfigs[season.seasonNumber] || "none"}
-                        onChange={(value) => setSeasonRssConfigs(prev => ({
-                          ...prev,
-                          [season.seasonNumber]: value
-                        }))}
-                      />
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRssModal(false)}>Cancel</Button>
-            <Button onClick={handleSaveRssConfig} disabled={savingRss}>
-              {savingRss ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RssMatchesDialog
+        open={showPreviewModal}
+        onOpenChange={setShowPreviewModal}
+        seriesId={id}
+        onRefreshSeries={handleRefresh}
+      />
 
-      {/* RSS Preview Modal */}
-      <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
-        <DialogContent className="sm:max-w-[70vw] max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Eye size={18} />
-                Configure RSS Matches
-              </div>
-              <Button className="mr-10" variant="outline" size="sm" onClick={fetchPreviewData} disabled={previewLoading}>
-                <RefreshCw size={14} className={`mr-2 ${previewLoading ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden flex flex-col py-4">
-            <div className="mb-4">
-              <Input
-                placeholder="Search episodes or RSS items..."
-                value={previewSearch}
-                onChange={(e) => setPreviewSearch(e.target.value)}
-              />
-            </div>
-            {previewLoading ? (
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                Loading preview...
-              </div>
-            ) : previewData.length === 0 ? (
-              <div className="flex items-center justify-center h-64 text-muted-foreground">
-                No episodes found or no RSS config assigned
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto">
-                <table className="w-full caption-bottom text-sm">
-                  <TableHeader className="sticky top-0 z-10 bg-background">
-                    <TableRow>
-                      <TableHead
-                        className="cursor-pointer"
-                        onClick={() => setPreviewSort({ field: 'seasonNumber', dir: previewSort.field === 'seasonNumber' && previewSort.dir === 'asc' ? 'desc' : 'asc' })}
-                      >
-                        Season {previewSort.field === 'seasonNumber' && (previewSort.dir === 'asc' ? '↑' : '↓')}
-                      </TableHead>
-                      <TableHead
-                        className="cursor-pointer"
-                        onClick={() => setPreviewSort({ field: 'episodeNumber', dir: previewSort.field === 'episodeNumber' && previewSort.dir === 'asc' ? 'desc' : 'asc' })}
-                      >
-                        Episode {previewSort.field === 'episodeNumber' && (previewSort.dir === 'asc' ? '↑' : '↓')}
-                      </TableHead>
-                      <TableHead>Episode Title</TableHead>
-                      <TableHead>Current RSS</TableHead>
-                      <TableHead>Preview Match</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {previewData
-                      .filter(item =>
-                        previewSearch === "" ||
-                        (item.episodeTitle && item.episodeTitle.toLowerCase().includes(previewSearch.toLowerCase())) ||
-                        (item.rssItemTitle && item.rssItemTitle.toLowerCase().includes(previewSearch.toLowerCase()))
-                      )
-                      .sort((a, b) => {
-                        let av = a[previewSort.field]
-                        let bv = b[previewSort.field]
-                        if (previewSort.field === 'episodeNumber') {
-                          av = Number(av) || 0
-                          bv = Number(bv) || 0
-                        }
-                        if (av < bv) return previewSort.dir === 'asc' ? -1 : 1
-                        if (av > bv) return previewSort.dir === 'asc' ? 1 : -1
-                        return 0
-                      })
-                      .map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>S{item.seasonNumber}</TableCell>
-                          <TableCell>E{item.episodeNumber}</TableCell>
-                          <TableCell className="max-w-md truncate">{item.episodeTitle || "-"}</TableCell>
-                          <TableCell className="max-w-md truncate">
-                            {item.currentRssItemTitle ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help text-blue-600 truncate block">{item.currentRssItemTitle}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-xs">{item.currentRssItemTitle}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <span className="text-muted-foreground italic text-xs">None</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-md truncate">
-                            {item.rssItemTitle ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help text-green-600 truncate block">{item.rssItemTitle}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-xs">{item.rssItemTitle}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <span className="text-muted-foreground italic text-xs">No match</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {item.rssItemTitle && item.rssItemTitle !== item.currentRssItemTitle ? (
-                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">New Match</Badge>
-                            ) : item.currentRssItemTitle && !item.rssItemTitle ? (
-                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Will Unlink</Badge>
-                            ) : item.rssItemTitle ? (
-                              <Badge variant="outline" className="text-muted-foreground">Unchanged</Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-1 justify-end">
-                              {updatingEpisodeIds.has(item.episodeId) ? (
-                                <Button size="sm" variant="ghost" disabled>
-                                  <RefreshCw size={14} className="animate-spin" />
-                                </Button>
-                              ) : item.rssItemId && item.rssItemId !== item.currentRssItemId ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleLinkEpisode(item.episodeId, item.rssItemId)}
-                                  className="text-green-700 border-green-200 hover:bg-green-50"
-                                >
-                                  Link
-                                </Button>
-                              ) : item.currentRssItemId ? (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleDownloadEpisode(item.episodeId)}
-                                    disabled={downloadingEpisodeIds.has(item.episodeId)}
-                                    className="text-blue-700 border-blue-200 hover:bg-blue-50"
-                                  >
-                                    {downloadingEpisodeIds.has(item.episodeId) ? (
-                                      <RefreshCw size={14} className="animate-spin" />
-                                    ) : (
-                                      <Download size={14} />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleUnlinkEpisode(item.episodeId)}
-                                    className="text-red-700 border-red-200 hover:bg-red-50"
-                                  >
-                                    Unlink
-                                  </Button>
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">-</span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </table>
-              </div>
-            )}
-          </div>
-          <DialogFooter className="flex justify-between items-center sm:justify-between w-full">
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-muted-foreground">
-                {previewData.filter(i => i.rssItemTitle && i.rssItemTitle !== i.currentRssItemTitle).length} new matches found
-              </div>
-              <Button variant="destructive" size="sm" onClick={() => setShowResetConfirm(true)} disabled={resettingRss}>
-                {resettingRss ? "Resetting..." : "Reset All Matches"}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setShowPreviewModal(false)}>Close</Button>
-              <Button onClick={() => setShowApplyConfirm(true)} disabled={applyingMatches || previewLoading || previewData.length === 0}>
-                {applyingMatches ? "Applying..." : "Apply All Matches"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset RSS Matches</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to reset all RSS matches? This will clear the link between episodes and RSS items.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleResetRssMatches} variant="destructive">
-              Reset
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showApplyConfirm} onOpenChange={setShowApplyConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Apply RSS Matches</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to apply these RSS matches to the episodes? This will update the database.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleApplyMatches}>
-              Apply
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Series</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{series?.title}"? This will permanently remove the series and all related data including episodes, seasons, downloads, and metadata. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteSeries} disabled={deletingSeries} variant="destructive">
-              {deletingSeries ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Series"
+        description={`Are you sure you want to delete "${series?.title}"? This will permanently remove the series and all related data including episodes, seasons, downloads, and metadata. This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={handleDeleteSeries}
+        loading={deletingSeries}
+        loadingLabel="Deleting..."
+      />
     </Layout>
   )
 }

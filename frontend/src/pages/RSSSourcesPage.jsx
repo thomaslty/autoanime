@@ -7,14 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { cn } from "../lib/utils"
+import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog"
+import { RssFeedFormDialog } from "@/components/dialogs/RssFeedFormDialog"
 
 export function RSSSourcesPage() {
   const [feeds, setFeeds] = useState([])
@@ -24,7 +21,6 @@ export function RSSSourcesPage() {
   const [health, setHealth] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [editingFeed, setEditingFeed] = useState(null)
-  const [formData, setFormData] = useState({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
   const [searchTerm, setSearchTerm] = useState("")
   const [dismissedWarnings, setDismissedWarnings] = useState(new Set())
   const [fetchingId, setFetchingId] = useState(null)
@@ -110,7 +106,7 @@ export function RSSSourcesPage() {
     return template ? template.name : "Unknown"
   }
 
-  const handleSave = async () => {
+  const handleSave = async (formData) => {
     try {
       const url = editingFeed
         ? `/api/rss/${editingFeed.id}`
@@ -127,10 +123,9 @@ export function RSSSourcesPage() {
 
       const savedFeed = await response.json()
 
-      // Close modal and reset form immediately
+      // Close modal and reset
       setShowModal(false)
       setEditingFeed(null)
-      setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
 
       // Refresh feed list to show the new feed
       fetchFeeds()
@@ -302,7 +297,6 @@ export function RSSSourcesPage() {
               </div>
               <Button onClick={() => {
                 setEditingFeed(null)
-                setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
                 setShowModal(true)
               }}>
                 <Plus size={18} className="mr-2" />
@@ -394,15 +388,6 @@ export function RSSSourcesPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
                                 setEditingFeed(feed)
-                                setFormData({
-                                  name: feed.name,
-                                  url: feed.url,
-                                  description: feed.description || "",
-                                  templateId: String(feed.templateId),
-                                  isEnabled: feed.isEnabled,
-                                  refreshInterval: feed.refreshInterval || "1h",
-                                  refreshIntervalType: feed.refreshIntervalType || "human"
-                                })
                                 setShowModal(true)
                               }}>
                                 <Edit2 size={14} className="mr-2" />
@@ -466,154 +451,34 @@ export function RSSSourcesPage() {
         </Card>
       </div>
 
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingFeed ? "Edit RSS Feed" : "Add RSS Feed"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Feed name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="url">URL</Label>
-              <Input
-                id="url"
-                type="url"
-                value={formData.url}
-                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                placeholder="https://example.com/rss"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Feed description"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="template">Template</Label>
-              <Select
-                value={formData.templateId}
-                onValueChange={(value) => setFormData({ ...formData, templateId: value })}
-              >
-                <SelectTrigger id="template">
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map((template) => (
-                    <SelectItem key={template.id} value={String(template.id)}>
-                      {template.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Refresh Interval</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={formData.refreshIntervalType}
-                  onValueChange={(value) => setFormData({ ...formData, refreshIntervalType: value, refreshInterval: value === "cron" ? "0 */1 * * *" : "1h" })}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="human">Simple</SelectItem>
-                    <SelectItem value="cron">Cron</SelectItem>
-                  </SelectContent>
-                </Select>
-                {formData.refreshIntervalType === "human" ? (
-                  <Select
-                    value={formData.refreshInterval}
-                    onValueChange={(value) => setFormData({ ...formData, refreshInterval: value })}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {["15m", "30m", "1h", "2h", "4h", "8h", "12h", "24h"].map(v => (
-                        <SelectItem key={v} value={v}>{v}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    className="flex-1"
-                    value={formData.refreshInterval}
-                    onChange={(e) => setFormData({ ...formData, refreshInterval: e.target.value })}
-                    placeholder="*/30 * * * *"
-                  />
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="isEnabled"
-                checked={formData.isEnabled}
-                onCheckedChange={(checked) => setFormData({ ...formData, isEnabled: checked })}
-              />
-              <Label htmlFor="isEnabled">Enabled</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowModal(false)
-              setEditingFeed(null)
-              setFormData({ name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" })
-            }}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={!formData.name || !formData.url}>
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RssFeedFormDialog
+        open={showModal}
+        onOpenChange={(open) => {
+          setShowModal(open)
+          if (!open) setEditingFeed(null)
+        }}
+        feed={editingFeed}
+        templates={templates}
+        onSave={handleSave}
+      />
 
-      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete RSS Feed</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this feed? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} variant="destructive">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+        title="Delete RSS Feed"
+        description="Are you sure you want to delete this feed? This action cannot be undone."
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+      />
 
-      <AlertDialog open={!!clearConfirmId} onOpenChange={(open) => !open && setClearConfirmId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear RSS Items</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to clear all RSS items for this feed? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearItems} variant="destructive">
-              Clear
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!clearConfirmId}
+        onOpenChange={(open) => !open && setClearConfirmId(null)}
+        title="Clear RSS Items"
+        description="Are you sure you want to clear all RSS items for this feed? This action cannot be undone."
+        confirmLabel="Clear"
+        onConfirm={handleClearItems}
+      />
     </Layout>
   )
 }

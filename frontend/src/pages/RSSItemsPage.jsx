@@ -6,9 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { RssItemEditDialog } from "@/components/dialogs/RssItemEditDialog"
 
 export function RSSItemsPage() {
   const { id } = useParams()
@@ -23,7 +22,6 @@ export function RSSItemsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [editingItem, setEditingItem] = useState(null)
-  const [editForm, setEditForm] = useState({ title: "", link: "", magnetLink: "" })
 
   const fetchFeed = async () => {
     try {
@@ -61,12 +59,12 @@ export function RSSItemsPage() {
     fetchItems()
   }, [id])
 
-  const handleEditSave = async () => {
+  const handleEditSave = async (formData) => {
     try {
       const response = await fetch(`/api/rss/${id}/items/${editingItem.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editForm)
+        body: JSON.stringify(formData)
       })
       if (!response.ok) throw new Error("Failed to update item")
       setEditingItem(null)
@@ -209,14 +207,7 @@ export function RSSItemsPage() {
                           <Button variant="ghost" size="icon" onClick={() => handleDownload(item)} title="Send to qBittorrent">
                             <Download size={16} />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => {
-                            setEditingItem(item)
-                            setEditForm({
-                              title: item.title || "",
-                              link: item.link || "",
-                              magnetLink: item.magnetLink || ""
-                            })
-                          }} title="Edit">
+                          <Button variant="ghost" size="icon" onClick={() => setEditingItem(item)} title="Edit">
                             <Edit2 size={16} />
                           </Button>
                         </div>
@@ -263,43 +254,12 @@ export function RSSItemsPage() {
         </Card>
       </div>
 
-      <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit RSS Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="item-title">Title</Label>
-              <Input
-                id="item-title"
-                value={editForm.title}
-                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="item-link">Link</Label>
-              <Input
-                id="item-link"
-                value={editForm.link}
-                onChange={(e) => setEditForm({ ...editForm, link: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="item-magnet">Magnet Link</Label>
-              <Input
-                id="item-magnet"
-                value={editForm.magnetLink}
-                onChange={(e) => setEditForm({ ...editForm, magnetLink: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
-            <Button onClick={handleEditSave}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RssItemEditDialog
+        open={!!editingItem}
+        onOpenChange={(open) => !open && setEditingItem(null)}
+        item={editingItem}
+        onSave={handleEditSave}
+      />
     </Layout>
   )
 }
