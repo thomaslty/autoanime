@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Layout } from "../components/Layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Loader2, CheckCircle, XCircle, TestTube, Eye, EyeOff } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, X, TestTube, Eye, EyeOff } from "lucide-react"
 import { getSocket } from "../hooks/useSocket"
 
 export function SettingsPage() {
@@ -21,7 +21,10 @@ export function SettingsPage() {
     sonarrApiKey: false,
     qbitPassword: false
   })
-  const [message, setMessage] = useState(null)
+  const [sonarrMessage, setSonarrMessage] = useState(null)
+  const [qbitMessage, setQbitMessage] = useState(null)
+  const sonarrTimerRef = useRef(null)
+  const qbitTimerRef = useRef(null)
   const [config, setConfig] = useState({
     sonarrUrl: "",
     sonarrApiKey: "",
@@ -79,19 +82,60 @@ export function SettingsPage() {
       }
     } catch (err) {
       console.error("Error fetching settings:", err)
-      setMessage({ type: "error", text: "Failed to load settings" })
+      setSonarrMessage({ type: "error", text: "Failed to load settings" })
+      setQbitMessage({ type: "error", text: "Failed to load settings" })
     }
   }
 
-  const showMessage = (type, text) => {
-    setMessage({ type, text })
-    setTimeout(() => setMessage(null), 5000)
+  const showSonarrMessage = (type, text) => {
+    if (sonarrTimerRef.current) clearTimeout(sonarrTimerRef.current)
+    setSonarrMessage({ type, text })
+    sonarrTimerRef.current = setTimeout(() => {
+      setSonarrMessage(null)
+      sonarrTimerRef.current = null
+    }, 10000)
+  }
+
+  const dismissSonarrMessage = () => {
+    if (sonarrTimerRef.current) clearTimeout(sonarrTimerRef.current)
+    sonarrTimerRef.current = null
+    setSonarrMessage(null)
+  }
+
+  const showQbitMessage = (type, text) => {
+    if (qbitTimerRef.current) clearTimeout(qbitTimerRef.current)
+    setQbitMessage({ type, text })
+    qbitTimerRef.current = setTimeout(() => {
+      setQbitMessage(null)
+      qbitTimerRef.current = null
+    }, 10000)
+  }
+
+  const dismissQbitMessage = () => {
+    if (qbitTimerRef.current) clearTimeout(qbitTimerRef.current)
+    qbitTimerRef.current = null
+    setQbitMessage(null)
   }
 
   const handleSaveSonarr = async () => {
     setLoading(prev => ({ ...prev, savingSonarr: true }))
-    
+
     try {
+      // Test connection first
+      const testResponse = await fetch("/api/settings/sonarr/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: config.sonarrUrl,
+          apiKey: config.sonarrApiKey.includes("•") ? undefined : config.sonarrApiKey
+        })
+      })
+      const testData = await testResponse.json()
+      if (!testData.connected) {
+        showSonarrMessage("error", testData.error || "Cannot connect to Sonarr")
+        return
+      }
+
       const response = await fetch("/api/settings/sonarr", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -102,16 +146,16 @@ export function SettingsPage() {
       })
 
       const data = await response.json()
-      
+
       if (data.success) {
-        showMessage("success", "Sonarr configuration saved successfully")
+        showSonarrMessage("success", "Sonarr configuration saved successfully")
         setOriginalConfig(prev => ({ ...prev, sonarrUrl: config.sonarrUrl }))
         fetchHealth()
       } else {
-        showMessage("error", data.error || "Failed to save Sonarr configuration")
+        showSonarrMessage("error", data.error || "Failed to save Sonarr configuration")
       }
     } catch (err) {
-      showMessage("error", err.message)
+      showSonarrMessage("error", err.message)
     } finally {
       setLoading(prev => ({ ...prev, savingSonarr: false }))
     }
@@ -133,12 +177,12 @@ export function SettingsPage() {
       const data = await response.json()
       
       if (data.connected) {
-        showMessage("success", `Sonarr connection successful (${data.version})`)
+        showSonarrMessage("success", `Sonarr connection successful (${data.version})`)
       } else {
-        showMessage("error", data.error || "Sonarr connection failed")
+        showSonarrMessage("error", data.error || "Sonarr connection failed")
       }
     } catch (err) {
-      showMessage("error", err.message)
+      showSonarrMessage("error", err.message)
     } finally {
       setLoading(prev => ({ ...prev, testingSonarr: false }))
     }
@@ -146,8 +190,24 @@ export function SettingsPage() {
 
   const handleSaveQbittorrent = async () => {
     setLoading(prev => ({ ...prev, savingQbit: true }))
-    
+
     try {
+      // Test connection first
+      const testResponse = await fetch("/api/settings/qbittorrent/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: config.qbitUrl,
+          username: config.qbitUsername,
+          password: config.qbitPassword.includes("•") ? undefined : config.qbitPassword
+        })
+      })
+      const testData = await testResponse.json()
+      if (!testData.connected) {
+        showQbitMessage("error", testData.error || "Cannot connect to qBittorrent")
+        return
+      }
+
       const response = await fetch("/api/settings/qbittorrent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -159,9 +219,9 @@ export function SettingsPage() {
       })
 
       const data = await response.json()
-      
+
       if (data.success) {
-        showMessage("success", "qBittorrent configuration saved successfully")
+        showQbitMessage("success", "qBittorrent configuration saved successfully")
         setOriginalConfig(prev => ({
           ...prev,
           qbitUrl: config.qbitUrl,
@@ -169,10 +229,10 @@ export function SettingsPage() {
         }))
         fetchHealth()
       } else {
-        showMessage("error", data.error || "Failed to save qBittorrent configuration")
+        showQbitMessage("error", data.error || "Failed to save qBittorrent configuration")
       }
     } catch (err) {
-      showMessage("error", err.message)
+      showQbitMessage("error", err.message)
     } finally {
       setLoading(prev => ({ ...prev, savingQbit: false }))
     }
@@ -195,12 +255,12 @@ export function SettingsPage() {
       const data = await response.json()
       
       if (data.connected) {
-        showMessage("success", `qBittorrent connection successful (${data.version})`)
+        showQbitMessage("success", `qBittorrent connection successful (${data.version})`)
       } else {
-        showMessage("error", data.error || "qBittorrent connection failed")
+        showQbitMessage("error", data.error || "qBittorrent connection failed")
       }
     } catch (err) {
-      showMessage("error", err.message)
+      showQbitMessage("error", err.message)
     } finally {
       setLoading(prev => ({ ...prev, testingQbit: false }))
     }
@@ -216,21 +276,6 @@ export function SettingsPage() {
     <Layout>
       <div className="p-6 space-y-6 max-w-4xl">
         <h2 className="text-2xl font-bold">Settings</h2>
-
-        {message && (
-          <div className={`p-4 rounded-lg flex items-center gap-2 ${
-            message.type === "success" 
-              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100" 
-              : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
-          }`}>
-            {message.type === "success" ? (
-              <CheckCircle className="h-5 w-5" />
-            ) : (
-              <XCircle className="h-5 w-5" />
-            )}
-            {message.text}
-          </div>
-        )}
 
         <Card>
           <CardHeader>
@@ -322,8 +367,8 @@ export function SettingsPage() {
                 )}
                 Test Connection
               </Button>
-              <Button 
-                onClick={handleSaveSonarr} 
+              <Button
+                onClick={handleSaveSonarr}
                 disabled={loading.savingSonarr || (!isSonarrChanged && !config.sonarrUrl)}
               >
                 {loading.savingSonarr ? (
@@ -333,6 +378,26 @@ export function SettingsPage() {
                 )}
               </Button>
             </div>
+            {sonarrMessage && (
+              <div className={`p-3 rounded-lg flex items-center gap-2 text-sm relative pr-9 ${
+                sonarrMessage.type === "success"
+                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                  : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+              }`}>
+                {sonarrMessage.type === "success" ? (
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 shrink-0" />
+                )}
+                {sonarrMessage.text}
+                <button
+                  onClick={dismissSonarrMessage}
+                  className="absolute top-2 right-2 opacity-60 hover:opacity-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -405,8 +470,8 @@ export function SettingsPage() {
                 )}
                 Test Connection
               </Button>
-              <Button 
-                onClick={handleSaveQbittorrent} 
+              <Button
+                onClick={handleSaveQbittorrent}
                 disabled={loading.savingQbit || (!isQbitChanged && !config.qbitUrl)}
               >
                 {loading.savingQbit ? (
@@ -416,6 +481,26 @@ export function SettingsPage() {
                 )}
               </Button>
             </div>
+            {qbitMessage && (
+              <div className={`p-3 rounded-lg flex items-center gap-2 text-sm relative pr-9 ${
+                qbitMessage.type === "success"
+                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                  : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100"
+              }`}>
+                {qbitMessage.type === "success" ? (
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 shrink-0" />
+                )}
+                {qbitMessage.text}
+                <button
+                  onClick={dismissQbitMessage}
+                  className="absolute top-2 right-2 opacity-60 hover:opacity-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
