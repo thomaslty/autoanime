@@ -174,7 +174,6 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
         eq(seriesEpisodes.sonarrEpisodeId, episode.id)
       );
 
-      // Metadata only - preserve isAutoDownloadEnabled, autoDownloadStatus, downloadedAt
       const metadataUpdate = {
         seriesId,
         seasonId: seasonIdMap[episode.seasonNumber] || null,
@@ -189,6 +188,15 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
       };
 
       if (existing.length > 0) {
+        // Detect file removal: hasFile changed from true to false
+        const wasFileRemoved = existing[0].hasFile === true && !episode.hasFile;
+        if (wasFileRemoved) {
+          metadataUpdate.isAutoDownloadEnabled = null;
+          metadataUpdate.downloadStatusId = null;
+          metadataUpdate.downloadedAt = null;
+          metadataUpdate.rssItemId = null;
+        }
+
         await db.update(seriesEpisodes)
           .set(metadataUpdate)
           .where(eq(seriesEpisodes.id, existing[0].id));

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { SeriesCard } from "./SeriesCard"
-import { RefreshCw, Search } from "lucide-react"
+import { RefreshCw, Search, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -10,8 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
-export function PosterBoard({ series = [], onSeriesClick, loading = false, onRefresh }) {
+export function PosterBoard({ series = [], onSeriesClick, loading = false, syncing = false, syncStatus, onRefresh }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [autoDownloadFilter, setAutoDownloadFilter] = useState("all")
   const [filteredSeries, setFilteredSeries] = useState(series)
@@ -51,10 +57,29 @@ export function PosterBoard({ series = [], onSeriesClick, loading = false, onRef
               className="pl-10"
             />
           </div>
-          <Button onClick={onRefresh} disabled={loading} variant="outline">
-            <RefreshCw size={18} className={loading ? "animate-spin mr-2" : "mr-2"} />
-            <span>Sync</span>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={syncing} variant="outline">
+                <RefreshCw size={18} className={syncing ? "animate-spin mr-2" : "mr-2"} />
+                <span>
+                  {syncing
+                    ? syncStatus?.progress?.total > 0
+                      ? `Syncing ${syncStatus.progress.current}/${syncStatus.progress.total}...`
+                      : "Syncing..."
+                    : "Sync"}
+                </span>
+                <ChevronDown size={14} className="ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onRefresh("delta")} disabled={syncing}>
+                Sync Delta
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRefresh("full")} disabled={syncing}>
+                Sync All
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Select value={autoDownloadFilter} onValueChange={setAutoDownloadFilter}>
             <SelectTrigger className="w-[120px]">
               <SelectValue placeholder="Filter" />
@@ -68,7 +93,7 @@ export function PosterBoard({ series = [], onSeriesClick, loading = false, onRef
         </div>
       </div>
 
-      {loading ? (
+      {loading && !series.length ? (
         <div className="flex items-center justify-center h-64">
           <RefreshCw size={40} className="animate-spin text-muted-foreground" />
         </div>

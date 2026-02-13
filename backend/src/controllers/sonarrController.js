@@ -4,6 +4,16 @@ const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeaso
 const { eq, and, inArray } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
 
+// In-memory sync state (survives across requests, lost on server restart)
+const syncState = {
+  status: 'idle',       // 'idle' | 'syncing' | 'error'
+  mode: null,           // 'delta' | 'full'
+  progress: { current: 0, total: 0 },
+  error: null,
+  startedAt: null,
+  completedAt: null,
+};
+
 const extractImageUrl = (images, coverType) => {
   const image = images?.find(img => img.coverType === coverType);
   return image?.remoteUrl || null;
@@ -107,6 +117,50 @@ const upsertSeasons = async (seriesId, seasons, now) => {
   }
 };
 
+/**
+ * Upsert a single episode record. Detects hasFile transitions (true -> false)
+ * and resets auto-download fields so the episode can be re-enabled.
+ */
+const upsertSingleEpisode = async (episode, seriesId, seasonIdMap, now) => {
+  const existing = await db.select().from(seriesEpisodes).where(
+    eq(seriesEpisodes.sonarrEpisodeId, episode.id)
+  );
+
+  const metadataUpdate = {
+    seriesId,
+    seasonId: seasonIdMap[episode.seasonNumber] || null,
+    title: episode.title,
+    episodeNumber: episode.episodeNumber,
+    seasonNumber: episode.seasonNumber,
+    overview: episode.overview,
+    airDate: parseTimestamp(episode.airDateUtc),
+    hasFile: episode.hasFile || false,
+    monitored: episode.monitored || true,
+    updatedAt: now
+  };
+
+  if (existing.length > 0) {
+    // Detect file removal: hasFile changed from true to false
+    const wasFileRemoved = existing[0].hasFile === true && !episode.hasFile;
+    if (wasFileRemoved) {
+      metadataUpdate.isAutoDownloadEnabled = null;
+      metadataUpdate.downloadStatusId = null;
+      metadataUpdate.downloadedAt = null;
+      metadataUpdate.rssItemId = null;
+    }
+
+    await db.update(seriesEpisodes)
+      .set(metadataUpdate)
+      .where(eq(seriesEpisodes.id, existing[0].id));
+  } else {
+    await db.insert(seriesEpisodes).values({
+      sonarrEpisodeId: episode.id,
+      ...metadataUpdate,
+      createdAt: now
+    });
+  }
+};
+
 const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
   try {
     // Get episodes from Sonarr API
@@ -120,41 +174,11 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
       seasonIdMap[season.seasonNumber] = season.id;
     }
 
-    let upsertCount = 0;
     for (const episode of episodes) {
-      const existing = await db.select().from(seriesEpisodes).where(
-        eq(seriesEpisodes.sonarrEpisodeId, episode.id)
-      );
-
-      // Metadata only - preserve isAutoDownloadEnabled, autoDownloadStatus, downloadedAt
-      const metadataUpdate = {
-        seriesId,
-        seasonId: seasonIdMap[episode.seasonNumber] || null,
-        title: episode.title,
-        episodeNumber: episode.episodeNumber,
-        seasonNumber: episode.seasonNumber,
-        overview: episode.overview,
-        airDate: parseTimestamp(episode.airDateUtc),
-        hasFile: episode.hasFile || false,
-        monitored: episode.monitored || true,
-        updatedAt: now
-      };
-
-      if (existing.length > 0) {
-        await db.update(seriesEpisodes)
-          .set(metadataUpdate)
-          .where(eq(seriesEpisodes.id, existing[0].id));
-      } else {
-        await db.insert(seriesEpisodes).values({
-          sonarrEpisodeId: episode.id,
-          ...metadataUpdate,
-          createdAt: now
-        });
-      }
-      upsertCount++;
+      await upsertSingleEpisode(episode, seriesId, seasonIdMap, now);
     }
 
-    return upsertCount;
+    return episodes.length;
   } catch (error) {
     logger.error({ error: error.message }, 'Error syncing episodes');
     throw error;
@@ -326,60 +350,186 @@ const getSeriesById = async (req, res) => {
   }
 };
 
+const getSyncStatus = (req, res) => {
+  res.json(syncState);
+};
+
 const syncSeries = async (req, res) => {
-  try {
-    const sonarrData = await sonarrService.getAllSeries();
-    const now = new Date();
+  // Prevent concurrent syncs
+  if (syncState.status === 'syncing') {
+    return res.status(409).json({ error: 'Sync already in progress' });
+  }
 
-    for (const item of sonarrData) {
-      const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
-      const seriesData = getSeriesCoreData(item, now);
+  const mode = req.body?.mode || 'delta';
 
-      let seriesId;
-      if (existing.length > 0) {
-        seriesId = existing[0].id;
-        await db.update(series)
-          .set(seriesData)
-          .where(eq(series.id, seriesId));
+  // Set sync state and return immediately
+  syncState.status = 'syncing';
+  syncState.mode = mode;
+  syncState.progress = { current: 0, total: 0 };
+  syncState.error = null;
+  syncState.startedAt = new Date();
+  syncState.completedAt = null;
+
+  res.status(202).json({ message: 'Sync started', mode });
+
+  // Run sync in background (fire-and-forget)
+  (async () => {
+    try {
+      if (mode === 'full') {
+        await runFullSync();
       } else {
-        const result = await db.insert(series).values(seriesData).returning({ id: series.id });
-        seriesId = result[0].id;
+        await runDeltaSync();
       }
+      syncState.status = 'idle';
+      syncState.completedAt = new Date();
+    } catch (error) {
+      logger.error({ error: error.message }, 'Background sync failed');
+      syncState.status = 'error';
+      syncState.error = error.message;
+      syncState.completedAt = new Date();
+    }
+  })();
+};
 
-      await Promise.all([
-        upsertSeriesMetadata(seriesId, item, now),
-        upsertSeriesImages(seriesId, item.images, now),
-        upsertAlternateTitles(seriesId, item.alternateTitles, now),
-        upsertSeasons(seriesId, item.seasons, now)
-      ]);
+/**
+ * Full sync: fetches ALL series and ALL episodes from Sonarr.
+ */
+const runFullSync = async () => {
+  const sonarrData = await sonarrService.getAllSeries();
+  const now = new Date();
+  syncState.progress.total = sonarrData.length;
 
-      // Sync episodes after seasons are synced (episodes reference seasons)
-      await upsertEpisodes(seriesId, item.id, now);
+  for (const item of sonarrData) {
+    const existing = await db.select().from(series).where(eq(series.sonarrId, item.id));
+    const seriesData = getSeriesCoreData(item, now);
+
+    let seriesId;
+    if (existing.length > 0) {
+      seriesId = existing[0].id;
+      await db.update(series)
+        .set(seriesData)
+        .where(eq(series.id, seriesId));
+    } else {
+      const result = await db.insert(series).values(seriesData).returning({ id: series.id });
+      seriesId = result[0].id;
     }
 
-    res.json({
-      success: true,
-      message: `Synced ${sonarrData.length} series from Sonarr`,
-      syncedAt: now
-    });
-  } catch (error) {
-    logger.error({ error: error.message }, 'Error syncing series');
-    res.status(500).json({ error: `Failed to sync series: ${error.message}` });
+    await Promise.all([
+      upsertSeriesMetadata(seriesId, item, now),
+      upsertSeriesImages(seriesId, item.images, now),
+      upsertAlternateTitles(seriesId, item.alternateTitles, now),
+      upsertSeasons(seriesId, item.seasons, now)
+    ]);
+
+    // Sync episodes after seasons are synced (episodes reference seasons)
+    await upsertEpisodes(seriesId, item.id, now);
+
+    syncState.progress.current++;
   }
+
+  logger.info({ seriesCount: sonarrData.length }, 'Full sync complete');
+};
+
+/**
+ * Delta sync: only syncs series that have missing episodes (no file) in Sonarr.
+ * Uses the /api/v3/wanted/missing endpoint with includeSeries=true.
+ */
+const runDeltaSync = async () => {
+  // Fetch all missing episodes from Sonarr (paginated)
+  const allMissingEpisodes = [];
+  let page = 1;
+  const pageSize = 1000;
+
+  while (true) {
+    const result = await sonarrService.getMissingEpisodes(page, pageSize);
+    if (result.records && result.records.length > 0) {
+      allMissingEpisodes.push(...result.records);
+    }
+    if (allMissingEpisodes.length >= result.totalRecords) break;
+    page++;
+  }
+
+  if (allMissingEpisodes.length === 0) {
+    logger.info('Delta sync: no missing episodes found');
+    return;
+  }
+
+  // Deduplicate series from the missing episode records
+  const seriesMap = new Map();
+  for (const ep of allMissingEpisodes) {
+    if (ep.series && !seriesMap.has(ep.series.id)) {
+      seriesMap.set(ep.series.id, ep.series);
+    }
+  }
+
+  syncState.progress.total = seriesMap.size;
+  const now = new Date();
+
+  // Upsert each affected series and its missing episodes
+  for (const [sonarrSeriesId, seriesItem] of seriesMap) {
+    // Upsert the series itself
+    const existing = await db.select().from(series).where(eq(series.sonarrId, sonarrSeriesId));
+    const seriesData = getSeriesCoreData(seriesItem, now);
+
+    let dbSeriesId;
+    if (existing.length > 0) {
+      dbSeriesId = existing[0].id;
+      await db.update(series).set(seriesData).where(eq(series.id, dbSeriesId));
+    } else {
+      const result = await db.insert(series).values(seriesData).returning({ id: series.id });
+      dbSeriesId = result[0].id;
+    }
+
+    // Upsert metadata, images, alternate titles, and seasons
+    await Promise.all([
+      upsertSeriesMetadata(dbSeriesId, seriesItem, now),
+      upsertSeriesImages(dbSeriesId, seriesItem.images, now),
+      upsertAlternateTitles(dbSeriesId, seriesItem.alternateTitles, now),
+      upsertSeasons(dbSeriesId, seriesItem.seasons, now)
+    ]);
+
+    // Get season ID mappings for this series
+    const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, dbSeriesId));
+    const seasonIdMap = {};
+    for (const season of seasons) {
+      seasonIdMap[season.seasonNumber] = season.id;
+    }
+
+    // Upsert the missing episodes for this series
+    const seriesMissingEpisodes = allMissingEpisodes.filter(ep => ep.seriesId === sonarrSeriesId);
+    for (const episode of seriesMissingEpisodes) {
+      await upsertSingleEpisode(episode, dbSeriesId, seasonIdMap, now);
+    }
+
+    syncState.progress.current++;
+  }
+
+  logger.info({
+    seriesCount: seriesMap.size,
+    episodeCount: allMissingEpisodes.length
+  }, 'Delta sync complete');
 };
 
 const triggerRefresh = async (req, res) => {
   try {
     const { id } = req.params;
-    const sonarrId = parseInt(id);
 
     const seriesResult = await db.select().from(series).where(eq(series.id, id));
     if (seriesResult.length === 0) {
       return res.status(404).json({ error: 'Series not found' });
     }
 
-    const result = await sonarrService.refreshSeries(seriesResult[0].sonarrId);
-    res.json({ success: true, message: 'Refresh triggered', command: result });
+    // Trigger Sonarr to rescan the series
+    await sonarrService.refreshSeries(seriesResult[0].sonarrId);
+
+    // Also sync episodes from Sonarr to our DB (applies hasFile reset logic)
+    const now = new Date();
+    const episodeCount = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+
+    res.json({
+      success: true,
+      message: `Refresh triggered and synced ${episodeCount || 0} episodes`,
+    });
   } catch (error) {
     logger.error({ error: error.message }, 'Error triggering refresh');
     res.status(500).json({ error: 'Failed to trigger refresh' });
@@ -728,6 +878,7 @@ module.exports = {
   getStatus,
   getSeries,
   getSeriesById,
+  getSyncStatus,
   syncSeries,
   triggerRefresh,
   getSeriesEpisodes,

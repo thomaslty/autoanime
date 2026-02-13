@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Layout } from "../components/Layout"
 import { PosterBoard } from "../components/PosterBoard"
 import { useNavigate } from "react-router"
@@ -6,16 +6,21 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Settings, AlertCircle, WifiOff } from "lucide-react"
 
+const SYNC_POLL_INTERVAL_MS = 3000
+
 export function HomePage() {
   const [series, setSeries] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
+  const [syncStatus, setSyncStatus] = useState(null)
   const navigate = useNavigate()
+  const prevSyncStatusRef = useRef(null)
+
+  const syncing = syncStatus?.status === "syncing"
 
   const fetchSeries = async () => {
     try {
-      setLoading(true)
       setError(null)
       const response = await fetch("/api/sonarr/series")
       if (!response.ok) {
@@ -27,25 +32,53 @@ export function HomePage() {
       setError(err.message)
       console.error("Error fetching series:", err)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
     }
   }
 
-  const handleRefresh = async () => {
+  const fetchSyncStatus = useCallback(async () => {
     try {
-      setLoading(true)
-      await fetch("/api/sonarr/sync", { method: "POST" })
-      await fetchSeries()
+      const response = await fetch("/api/sonarr/sync/status")
+      if (response.ok) {
+        const data = await response.json()
+        setSyncStatus(data)
+
+        // When sync transitions from 'syncing' to 'idle', refetch series
+        if (prevSyncStatusRef.current === "syncing" && data.status !== "syncing") {
+          await fetchSeries()
+        }
+        prevSyncStatusRef.current = data.status
+      }
+    } catch {
+      // Silently ignore polling errors
+    }
+  }, [])
+
+  const handleRefresh = async (mode) => {
+    try {
+      await fetch("/api/sonarr/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode })
+      })
+      // Immediately poll sync status to reflect the change
+      await fetchSyncStatus()
     } catch (err) {
-      console.error("Error syncing:", err)
-      setLoading(false)
+      console.error("Error starting sync:", err)
     }
   }
 
   useEffect(() => {
     fetchHealth()
     fetchSeries()
+    fetchSyncStatus()
   }, [])
+
+  // Poll sync status on an interval
+  useEffect(() => {
+    const intervalId = setInterval(fetchSyncStatus, SYNC_POLL_INTERVAL_MS)
+    return () => clearInterval(intervalId)
+  }, [fetchSyncStatus])
 
   const fetchHealth = async () => {
     try {
@@ -111,8 +144,10 @@ export function HomePage() {
         )}
         <PosterBoard
           series={series}
+          loading={initialLoading}
+          syncing={syncing}
+          syncStatus={syncStatus}
           onSeriesClick={handleSeriesClick}
-          loading={loading}
           onRefresh={handleRefresh}
         />
       </div>

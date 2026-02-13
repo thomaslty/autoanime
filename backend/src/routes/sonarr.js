@@ -11,6 +11,7 @@ router.get('/series/:id', sonarrController.getSeriesById);
 router.get('/series/:id/episodes', sonarrController.getSeriesEpisodes);
 router.get('/series/:id/episodes/download-status', sonarrController.getEpisodeDownloadStatuses);
 router.get('/series/:id/auto-download-status', sonarrController.getSeriesAutoDownloadStatus);
+router.get('/sync/status', sonarrController.getSyncStatus);
 router.post('/sync', sonarrController.syncSeries);
 router.post('/series/:id/episodes/sync', sonarrController.syncSeriesEpisodes);
 router.post('/series/:id/refresh', sonarrController.triggerRefresh);

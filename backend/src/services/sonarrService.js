@@ -176,6 +176,37 @@ const renameSeries = async (seriesId) => {
   return response.json();
 };
 
+/**
+ * Fetch missing episodes from Sonarr (episodes without files).
+ * Uses the /api/v3/wanted/missing endpoint with pagination.
+ * @param {number} page - Page number (1-indexed)
+ * @param {number} pageSize - Number of records per page
+ * @returns {{ page, pageSize, totalRecords, records }} Paginated missing episodes
+ */
+const getMissingEpisodes = async (page = 1, pageSize = 1000) => {
+  const sonarrConfig = await getSonarrConfig();
+  const headers = {
+    'X-Api-Key': sonarrConfig.apiKey,
+    'Content-Type': 'application/json'
+  };
+  const apiBase = `${sonarrConfig.url}/api/v3`;
+
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+    includeSeries: 'true',
+    monitored: 'true',
+    sortKey: 'seriesId',
+    sortDirection: 'ascending'
+  });
+
+  const response = await fetch(`${apiBase}/wanted/missing?${params}`, { headers });
+  if (!response.ok) {
+    throw new Error(`Sonarr API error: ${response.status}`);
+  }
+  return response.json();
+};
+
 const getEpisodesBySeries = async (seriesId) => {
   const sonarrConfig = await getSonarrConfig();
   const headers = {
@@ -483,6 +514,7 @@ module.exports = {
   searchSeries,
   refreshSeries,
   renameSeries,
+  getMissingEpisodes,
   getEpisodesBySeries,
   getEpisodeById,
   toggleSeriesAutoDownload,
