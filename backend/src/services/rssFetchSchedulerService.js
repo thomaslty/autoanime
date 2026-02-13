@@ -1,4 +1,5 @@
 const { fetchAndParseRss, getOverdueFeeds } = require('./rssService');
+const { checkServices } = require('./connectionMonitor');
 const { logger } = require('../utils/logger');
 
 /**
@@ -6,6 +7,12 @@ const { logger } = require('../utils/logger');
  * Independently callable by other components.
  */
 const fetchAndParseAllRss = async () => {
+  const { allAvailable, unavailable } = await checkServices(['database']);
+  if (!allAvailable) {
+    logger.warn({ unavailable }, 'Skipping rss-fetch — required services unavailable');
+    return { fetched: 0, skipped: true };
+  }
+
   const overdueFeeds = await getOverdueFeeds();
   if (overdueFeeds.length === 0) {
     logger.info('RSS Fetch Scheduler tick — no overdue feeds');

@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronRight, Circle, Wifi, WifiOff } from "lucide-react"
+import { ChevronRight, Circle, Wifi, WifiOff, AlertTriangle } from "lucide-react"
+import { getSocket } from "../hooks/useSocket"
 import {
   Sidebar,
   SidebarContent,
@@ -56,6 +57,7 @@ function AppSidebar() {
   const [openMenus, setOpenMenus] = useState({})
   const [health, setHealth] = useState(null)
 
+  // Fetch initial health, then use WebSocket for real-time updates
   useEffect(() => {
     const fetchHealth = async () => {
       try {
@@ -68,8 +70,12 @@ function AppSidebar() {
     }
     fetchHealth()
 
-    const interval = setInterval(fetchHealth, 30000)
-    return () => clearInterval(interval)
+    const socket = getSocket()
+    const handleStatus = (status) => {
+      setHealth((prev) => ({ ...prev, ...status }))
+    }
+    socket.on('services:status', handleStatus)
+    return () => socket.off('services:status', handleStatus)
   }, [])
 
   // Auto-expand menu when child route is active

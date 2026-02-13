@@ -11,6 +11,14 @@ const initSocket = (httpServer) => {
   io.on('connection', (socket) => {
     logger.info({ socketId: socket.id }, 'Socket.IO client connected');
 
+    // Send current service status immediately on connect
+    try {
+      const { getStatus } = require('./services/connectionMonitor');
+      socket.emit('services:status', getStatus());
+    } catch (err) {
+      logger.debug({ error: err.message }, 'Could not send initial service status');
+    }
+
     // Client joins a room scoped to a series ID
     socket.on('watch:series', (seriesId) => {
       socket.join(`series:${seriesId}`);

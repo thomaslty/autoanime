@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Loader2, CheckCircle, XCircle, TestTube, Eye, EyeOff } from "lucide-react"
+import { getSocket } from "../hooks/useSocket"
 
 export function SettingsPage() {
   const [health, setHealth] = useState(null)
@@ -39,6 +40,16 @@ export function SettingsPage() {
   useEffect(() => {
     fetchHealth()
     fetchSettings()
+  }, [])
+
+  // Real-time service status via WebSocket
+  useEffect(() => {
+    const socket = getSocket()
+    const handleStatus = (status) => {
+      setHealth((prev) => ({ ...prev, ...status }))
+    }
+    socket.on('services:status', handleStatus)
+    return () => socket.off('services:status', handleStatus)
   }, [])
 
   const fetchHealth = async () => {

@@ -1,6 +1,7 @@
 const { db } = require('../db/db');
 const { seriesEpisodes, rssItem, downloads, downloadStatus } = require('../db/schema');
 const { eq, and, isNull, isNotNull, or } = require('drizzle-orm');
+const { checkServices } = require('./connectionMonitor');
 const { logger } = require('../utils/logger');
 const qbittorrentService = require('./qbittorrentService');
 const { getInfoHash } = require('../utils/magnetHelper');
@@ -143,6 +144,12 @@ const triggerEpisodeDownload = async (episode, rssItemData, statusIds) => {
  * Independently callable by other components.
  */
 const triggerPendingDownloads = async () => {
+  const { allAvailable, unavailable } = await checkServices(['database', 'qbittorrent']);
+  if (!allAvailable) {
+    logger.warn({ unavailable }, 'Skipping download-trigger — required services unavailable');
+    return { triggered: 0, skipped: true };
+  }
+
   try {
     const statusIds = await getDownloadStatusIds();
 

@@ -80,6 +80,7 @@ const getConnectionStatus = async () => {
     });
 
     if (!response.ok) {
+      cookie = null; // Clear stale cookie for re-auth on next attempt
       return {
         connected: false,
         message: `API error: ${response.status}`,
@@ -91,6 +92,7 @@ const getConnectionStatus = async () => {
 
     // Validate that response looks like a qBittorrent version, not HTML
     if (version.includes('<!DOCTYPE') || version.includes('<html') || version.length > 100) {
+      cookie = null;
       return {
         connected: false,
         message: 'Invalid response - received HTML instead of version. Check qBittorrent URL configuration.',
@@ -105,6 +107,7 @@ const getConnectionStatus = async () => {
       version: version
     };
   } catch (error) {
+    cookie = null; // Clear stale cookie for re-auth on next attempt
     const config = await getQbitConfig();
     return {
       connected: false,
@@ -115,6 +118,15 @@ const getConnectionStatus = async () => {
 };
 
 let categoryEnsured = false;
+
+/**
+ * Clear the cached session cookie, forcing re-authentication on next request.
+ * Called when connection checks detect qBittorrent is unavailable.
+ */
+const clearCookie = () => {
+  cookie = null;
+  categoryEnsured = false;
+};
 
 const CATEGORY_NAME = 'autoanime';
 
@@ -710,5 +722,6 @@ module.exports = {
   login,
   syncDownloadStatuses,
   mapQbitStateToStatus,
-  copyDownloadedFile
+  copyDownloadedFile,
+  clearCookie
 };

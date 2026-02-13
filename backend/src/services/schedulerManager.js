@@ -4,6 +4,7 @@ const { fetchAndParseAllRss } = require('./rssFetchSchedulerService');
 const { matchAllRssItems } = require('./rssMatchingSchedulerService');
 const { triggerPendingDownloads } = require('./downloadSchedulerService');
 const { runDownloadSync } = require('./downloadSyncSchedulerService');
+const { checkAll } = require('./connectionMonitor');
 
 const scheduler = new ToadScheduler();
 
@@ -26,6 +27,7 @@ const createJob = (id, seconds, taskFn) => {
 };
 
 const startAll = () => {
+  scheduler.addSimpleIntervalJob(createJob('health-check', 30, checkAll));
   scheduler.addSimpleIntervalJob(createJob('rss-fetch', 60, fetchAndParseAllRss));
   scheduler.addSimpleIntervalJob(createJob('rss-matching', 60, matchAllRssItems));
   scheduler.addSimpleIntervalJob(createJob('download-trigger', 60, triggerPendingDownloads));

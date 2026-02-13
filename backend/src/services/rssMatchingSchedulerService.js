@@ -1,6 +1,7 @@
 const { db } = require('../db/db');
 const { series, seriesSeasons, rssConfig, rssItem, seriesEpisodes } = require('../db/schema');
 const { eq, and, isNull, isNotNull } = require('drizzle-orm');
+const { checkServices } = require('./connectionMonitor');
 const { logger } = require('../utils/logger');
 const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpisode } = require('../utils/regexHelper');
 
@@ -10,6 +11,12 @@ const { convertCustomRegexToStandard, extractEpisodeNumber, calculateActualEpiso
  * Independently callable by other components.
  */
 const matchAllRssItems = async () => {
+  const { allAvailable, unavailable } = await checkServices(['database']);
+  if (!allAvailable) {
+    logger.warn({ unavailable }, 'Skipping rss-matching — required services unavailable');
+    return { matched: 0, skipped: true };
+  }
+
   try {
     // Find all series with an RSS config assigned
     const seriesList = await db.select({
