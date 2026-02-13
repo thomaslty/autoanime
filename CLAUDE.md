@@ -71,6 +71,18 @@ cd frontend && npx shadcn@latest add <component-name>
 
 > ⚠️ **Never write SQL migration files manually** — always use `npx drizzle-kit generate` after editing the schema, then `npm run db:migrate`
 
+> ⚠️ **Drizzle ORM `.where()` replacement bug**: Chaining multiple `.where()` calls does **NOT** AND them together — the second `.where()` **replaces** the first. Always combine conditions in a single `.where(and(...))` call:
+> ```js
+> // BAD — second .where() silently replaces the first
+> let query = db.select().from(table).where(eq(table.col, 'a'));
+> query = query.where(eq(table.col2, 'b')); // col='a' filter is LOST
+>
+> // GOOD — use and() to combine conditions
+> const conditions = [eq(table.col, 'a')];
+> if (someCondition) conditions.push(eq(table.col2, 'b'));
+> const query = db.select().from(table).where(and(...conditions));
+> ```
+
 ## Access Points
 
 - Frontend: http://localhost:5173

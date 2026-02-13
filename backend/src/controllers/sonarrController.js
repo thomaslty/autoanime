@@ -1,4 +1,5 @@
 const sonarrService = require('../services/sonarrService');
+const qbittorrentService = require('../services/qbittorrentService');
 const { db } = require('../db/db');
 const { series, seriesMetadata, seriesImages, seriesAlternateTitles, seriesSeasons, seriesEpisodes, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, and, inArray } = require('drizzle-orm');
@@ -152,12 +153,15 @@ const upsertSingleEpisode = async (episode, seriesId, seasonIdMap, now) => {
     await db.update(seriesEpisodes)
       .set(metadataUpdate)
       .where(eq(seriesEpisodes.id, existing[0].id));
+
+    return wasFileRemoved ? existing[0].id : null;
   } else {
     await db.insert(seriesEpisodes).values({
       sonarrEpisodeId: episode.id,
       ...metadataUpdate,
       createdAt: now
     });
+    return null;
   }
 };
 
@@ -165,7 +169,7 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
   try {
     // Get episodes from Sonarr API
     const episodes = await sonarrService.getEpisodesBySeries(sonarrSeriesId);
-    if (!episodes || episodes.length === 0) return 0;
+    if (!episodes || episodes.length === 0) return { count: 0, removedFileEpisodeIds: [] };
 
     // Get season mappings for this series
     const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, seriesId));
@@ -174,14 +178,65 @@ const upsertEpisodes = async (seriesId, sonarrSeriesId, now) => {
       seasonIdMap[season.seasonNumber] = season.id;
     }
 
+    const removedFileEpisodeIds = [];
     for (const episode of episodes) {
-      await upsertSingleEpisode(episode, seriesId, seasonIdMap, now);
+      const removedId = await upsertSingleEpisode(episode, seriesId, seasonIdMap, now);
+      if (removedId) removedFileEpisodeIds.push(removedId);
     }
 
-    return episodes.length;
+    return { count: episodes.length, removedFileEpisodeIds };
   } catch (error) {
     logger.error({ error: error.message }, 'Error syncing episodes');
     throw error;
+  }
+};
+
+/**
+ * Handle stale download records for episodes whose files were removed.
+ * - If qBittorrent torrent exists and is 100% complete: re-copy file + refresh/rename Sonarr
+ * - If torrent not found or incomplete: delete the download record
+ */
+const handleRemovedFileDownloads = async (episodeIds, sonarrId) => {
+  if (!episodeIds || episodeIds.length === 0) return;
+
+  for (const episodeId of episodeIds) {
+    try {
+      const downloadRecords = await db.select().from(downloads)
+        .where(eq(downloads.seriesEpisodeId, episodeId));
+
+      if (downloadRecords.length === 0) continue;
+
+      const download = downloadRecords[0];
+      if (!download.torrentHash) {
+        await db.delete(downloads).where(eq(downloads.id, download.id));
+        logger.info({ downloadId: download.id, episodeId }, 'Deleted download record with no torrent hash');
+        continue;
+      }
+
+      const torrent = await qbittorrentService.getTorrentByHash(download.torrentHash);
+
+      if (torrent && torrent.progress === 1) {
+        // Torrent exists and is 100% complete — recover by re-copying file
+        logger.info({ downloadId: download.id, episodeId, torrentHash: download.torrentHash }, 'Torrent still complete, recovering file');
+        const copyResult = await qbittorrentService.copyDownloadedFile(download, torrent.content_path, torrent.root_path);
+
+        if (copyResult.success && sonarrId) {
+          await sonarrService.refreshSeries(sonarrId);
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          await sonarrService.renameSeries(sonarrId);
+          logger.info({ sonarrId, episodeId }, 'Triggered Sonarr refresh and rename after file recovery');
+        } else if (!copyResult.success) {
+          logger.warn({ downloadId: download.id, error: copyResult.message }, 'File recovery copy failed, deleting download record');
+          await db.delete(downloads).where(eq(downloads.id, download.id));
+        }
+      } else {
+        // Torrent not found or incomplete — clean up stale download record
+        await db.delete(downloads).where(eq(downloads.id, download.id));
+        logger.info({ downloadId: download.id, episodeId, torrentHash: download.torrentHash }, 'Deleted stale download record (torrent not found or incomplete)');
+      }
+    } catch (error) {
+      logger.error({ episodeId, error: error.message }, 'Error handling removed file download');
+    }
   }
 };
 
@@ -422,7 +477,8 @@ const runFullSync = async () => {
     ]);
 
     // Sync episodes after seasons are synced (episodes reference seasons)
-    await upsertEpisodes(seriesId, item.id, now);
+    const { removedFileEpisodeIds } = await upsertEpisodes(seriesId, item.id, now);
+    await handleRemovedFileDownloads(removedFileEpisodeIds, item.id);
 
     syncState.progress.current++;
   }
@@ -496,10 +552,13 @@ const runDeltaSync = async () => {
     }
 
     // Upsert the missing episodes for this series
+    const removedFileEpisodeIds = [];
     const seriesMissingEpisodes = allMissingEpisodes.filter(ep => ep.seriesId === sonarrSeriesId);
     for (const episode of seriesMissingEpisodes) {
-      await upsertSingleEpisode(episode, dbSeriesId, seasonIdMap, now);
+      const removedId = await upsertSingleEpisode(episode, dbSeriesId, seasonIdMap, now);
+      if (removedId) removedFileEpisodeIds.push(removedId);
     }
+    await handleRemovedFileDownloads(removedFileEpisodeIds, sonarrSeriesId);
 
     syncState.progress.current++;
   }
@@ -524,7 +583,10 @@ const triggerRefresh = async (req, res) => {
 
     // Also sync episodes from Sonarr to our DB (applies hasFile reset logic)
     const now = new Date();
-    const episodeCount = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+    const { count: episodeCount, removedFileEpisodeIds } = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+
+    // Handle stale download records for episodes whose files were removed
+    await handleRemovedFileDownloads(removedFileEpisodeIds, seriesResult[0].sonarrId);
 
     res.json({
       success: true,
@@ -579,7 +641,10 @@ const syncSeriesEpisodes = async (req, res) => {
     }
 
     const now = new Date();
-    const episodeCount = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+    const { count: episodeCount, removedFileEpisodeIds } = await upsertEpisodes(seriesResult[0].id, seriesResult[0].sonarrId, now);
+
+    // Handle stale download records for episodes whose files were removed
+    await handleRemovedFileDownloads(removedFileEpisodeIds, seriesResult[0].sonarrId);
 
     res.json({
       success: true,
