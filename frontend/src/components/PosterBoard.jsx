@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { useMemo } from "react"
+import { useSearchParams } from "react-router"
 import { SeriesCard } from "./SeriesCard"
 import { RefreshCw, Search, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,15 +18,43 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-export function PosterBoard({ series = [], onSeriesClick, loading = false, syncing = false, syncStatus, onRefresh }) {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [autoDownloadFilter, setAutoDownloadFilter] = useState("all")
-  const [filteredSeries, setFilteredSeries] = useState(series)
+const VALID_FILTERS = ["all", "with-auto-download", "without-auto-download"]
 
-  useEffect(() => {
+export function PosterBoard({ series = [], onSeriesClick, loading = false, syncing = false, syncStatus, onRefresh }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const searchTerm = searchParams.get("q") || ""
+  const autoDownloadFilter = VALID_FILTERS.includes(searchParams.get("filter"))
+    ? searchParams.get("filter")
+    : "all"
+
+  const setSearchTerm = (value) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) {
+        next.set("q", value)
+      } else {
+        next.delete("q")
+      }
+      return next
+    }, { replace: true })
+  }
+
+  const setAutoDownloadFilter = (value) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value && value !== "all") {
+        next.set("filter", value)
+      } else {
+        next.delete("filter")
+      }
+      return next
+    }, { replace: true })
+  }
+
+  const filteredSeries = useMemo(() => {
     let filtered = series
 
-    // Apply search filter
     if (searchTerm.trim() !== "") {
       const lowerTerm = searchTerm.toLowerCase()
       filtered = filtered.filter(s =>
@@ -33,14 +62,13 @@ export function PosterBoard({ series = [], onSeriesClick, loading = false, synci
       )
     }
 
-    // Apply auto-download filter
     if (autoDownloadFilter === "with-auto-download") {
       filtered = filtered.filter(s => s.hasAutoDownloadEpisodes === true)
     } else if (autoDownloadFilter === "without-auto-download") {
       filtered = filtered.filter(s => !s.hasAutoDownloadEpisodes)
     }
 
-    setFilteredSeries(filtered)
+    return filtered
   }, [searchTerm, autoDownloadFilter, series])
 
   return (
