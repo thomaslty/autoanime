@@ -65,14 +65,16 @@ export function RssFilterDialog({
                     <span className="text-sm w-24 shrink-0">
                       {season.seasonNumber === 0 ? "Specials" : `Season ${season.seasonNumber}`}
                     </span>
-                    <SearchableSelect
-                      items={seasonRssItems}
-                      value={seasonRssConfigs[season.seasonNumber] || "none"}
-                      onChange={(value) => setSeasonRssConfigs(prev => ({
-                        ...prev,
-                        [season.seasonNumber]: value,
-                      }))}
-                    />
+                    <div className="flex-1 min-w-0">
+                      <SearchableSelect
+                        items={seasonRssItems}
+                        value={seasonRssConfigs[season.seasonNumber] || "none"}
+                        onChange={(value) => setSeasonRssConfigs(prev => ({
+                          ...prev,
+                          [season.seasonNumber]: value,
+                        }))}
+                      />
+                    </div>
                   </div>
                 ))}
             </div>

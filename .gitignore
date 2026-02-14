@@ -62,3 +62,7 @@ CLAUDE.md
 # markdowns
 ISSUE.md
 PLAN.md
+
+# playwright
+test-results/
+.playwright-mcp/
