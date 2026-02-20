@@ -29,6 +29,23 @@ const rssTemplate = pgTable('rss_template', {
   index('idx_rss_template_name').on(table.name),
 ]);
 
+// User-defined RSS parsers (linked to rss_template)
+const rssParser = pgTable('rss_parser', {
+  id: serial('id').primaryKey(),
+  name: varchar('name').notNull(),
+  description: text('description'),
+  rssTemplateId: integer('rss_template_id').references(() => rssTemplate.id, { onDelete: 'cascade' }).unique(),
+  itemPath: varchar('item_path').notNull(),
+  fieldMappings: jsonb('field_mappings').notNull(),
+  sampleUrl: text('sample_url'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_rss_parser_template').on(table.rssTemplateId),
+  index('idx_rss_parser_name').on(table.name),
+]);
+
 const settings = pgTable('settings', {
   id: serial('id').primaryKey(),
   key: varchar('key', { length: 255 }).notNull().unique(),
@@ -274,5 +291,6 @@ module.exports = {
   seriesSeasons,
   seriesEpisodes,
   downloadStatus,
-  rssTemplate
+  rssTemplate,
+  rssParser
 };

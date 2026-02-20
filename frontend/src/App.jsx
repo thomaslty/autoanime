@@ -5,6 +5,7 @@ import { RSSPage } from './pages/RSSPage'
 import { RSSSourcesPage } from './pages/RSSSourcesPage'
 import { RSSItemsPage } from './pages/RSSItemsPage'
 import { RSSAnimeConfigsPage } from './pages/RSSAnimeConfigsPage'
+import { RSSParserCreatorPage } from './pages/RSSParserCreatorPage'
 import { SettingsPage } from './pages/SettingsPage'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
       <Route path="/rss/sources" element={<RSSSourcesPage />} />
       <Route path="/rss/:id/items" element={<RSSItemsPage />} />
       <Route path="/rss/anime-configs" element={<RSSAnimeConfigsPage />} />
+      <Route path="/rss/parsers" element={<RSSParserCreatorPage />} />
       <Route path="/settings" element={<SettingsPage />} />
     </Routes>
   )

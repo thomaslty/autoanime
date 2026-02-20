@@ -76,4 +76,47 @@ function base32ToHex(base32Str) {
     return hex;
 }
 
-module.exports = { extractHash, getInfoHash };
+/**
+ * Check whether a URL is a magnet link.
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isMagnetLink(url) {
+  return typeof url === 'string' && url.trim().startsWith('magnet:');
+}
+
+const { extractInfoHashFromTorrent } = require('./bencodeParser');
+
+/**
+ * Get the info hash from either a magnet link or a .torrent file URL.
+ * For magnet links, extracts the hash from the URI (synchronous).
+ * For .torrent URLs, downloads the file and parses bencode to compute SHA1.
+ *
+ * @param {string} url - A magnet URI or .torrent file URL
+ * @returns {Promise<string|null>} - 40-character lowercase hex info_hash, or null
+ */
+async function getInfoHashFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+
+  if (isMagnetLink(url)) {
+    return getInfoHash(url);
+  }
+
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) {
+      logger.warn({ url, status: response.status }, 'Failed to download .torrent file');
+      return null;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return extractInfoHashFromTorrent(buffer);
+  } catch (error) {
+    logger.error({ url, error: error.message }, 'Error extracting info hash from .torrent URL');
+    return null;
+  }
+}
+
+module.exports = { extractHash, getInfoHash, isMagnetLink, getInfoHashFromUrl };

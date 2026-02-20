@@ -8,6 +8,13 @@
       "when": 1770865062412,
       "tag": "0000_loud_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771556348410,
+      "tag": "0001_last_harpoon",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ const { rss, rssItem, downloadStatus, downloads } = require('../db/schema');
 const { eq, sql, lte, and } = require('drizzle-orm');
 const { getParser } = require('../rss_parsers');
 const { CronExpressionParser } = require('cron-parser');
-const { getInfoHash } = require('../utils/magnetHelper');
+const { getInfoHashFromUrl } = require('../utils/magnetHelper');
 
 const ALLOWED_HUMAN_INTERVALS = ['15m', '30m', '1h', '2h', '4h', '8h', '12h', '24h'];
 
@@ -111,7 +111,7 @@ const fetchAndParseRss = async (rssId) => {
     return { success: false, message: fetchResult.error };
   }
 
-  const parser = getParser(feed[0].templateId);
+  const parser = await getParser(feed[0].templateId);
   const items = parser.parse(fetchResult.xml);
 
   const newItems = await saveRssItems(rssId, items);
@@ -268,7 +268,7 @@ const downloadRssItem = async (feedId, itemId) => {
 
   if (result.success) {
     // Extract torrent hash from magnet link
-    const torrentHash = getInfoHash(item.magnetLink);
+    const torrentHash = await getInfoHashFromUrl(item.magnetLink);
 
     // Create download record
     if (torrentHash) {

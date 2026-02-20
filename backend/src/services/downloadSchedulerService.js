@@ -4,7 +4,7 @@ const { eq, and, isNull, isNotNull, or } = require('drizzle-orm');
 const { checkServices } = require('./connectionMonitor');
 const { logger } = require('../utils/logger');
 const qbittorrentService = require('./qbittorrentService');
-const { getInfoHash } = require('../utils/magnetHelper');
+const { getInfoHashFromUrl } = require('../utils/magnetHelper');
 
 // Cache for download status IDs
 let downloadStatusCache = null;
@@ -45,8 +45,8 @@ const triggerEpisodeDownload = async (episode, rssItemData, statusIds) => {
     return { success: false, message: result.message || 'Failed to add torrent to qBittorrent' };
   }
 
-  // Extract torrent hash from magnet link (supports both hex and base32 formats)
-  const torrentHash = getInfoHash(rssItemData.magnetLink);
+  // Extract torrent hash (supports magnet links and .torrent file URLs)
+  const torrentHash = await getInfoHashFromUrl(rssItemData.magnetLink);
   logger.info({ episodeId: episode.id, torrentHash }, '[triggerEpisodeDownload] Extracted torrent hash');
 
   const now = new Date();

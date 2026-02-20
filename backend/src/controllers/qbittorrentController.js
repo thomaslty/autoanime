@@ -3,7 +3,7 @@ const { db } = require('../db/db');
 const { downloads, downloadStatus } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const { logger } = require('../utils/logger');
-const { getInfoHash } = require('../utils/magnetHelper');
+const { getInfoHashFromUrl } = require('../utils/magnetHelper');
 
 // Cache for download status IDs
 let downloadStatusCache = null;
@@ -54,7 +54,7 @@ const addMagnet = async (req, res) => {
       return res.status(500).json({ error: result.message });
     }
 
-    const torrentHash = getInfoHash(magnet);
+    const torrentHash = await getInfoHashFromUrl(magnet);
 
     if (torrentHash) {
       const now = new Date();

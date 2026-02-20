@@ -40,7 +40,8 @@ const navItems = [
     icon: Rss,
     items: [
       { title: "Main Sources", href: "/rss/sources" },
-      { title: "Anime Configs", href: "/rss/anime-configs" }
+      { title: "Anime Configs", href: "/rss/anime-configs" },
+      { title: "Parser Creator", href: "/rss/parsers" },
     ]
   },
   {
