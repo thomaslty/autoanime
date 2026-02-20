@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-const DEFAULT_FORM = { name: "", url: "", description: "", templateId: "0", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" }
+const DEFAULT_FORM = { name: "", url: "", description: "", templateId: "1", isEnabled: true, refreshInterval: "1h", refreshIntervalType: "human" }
 
 export function RssFeedFormDialog({ open, onOpenChange, feed, templates, onSave }) {
   const [formData, setFormData] = useState(DEFAULT_FORM)
