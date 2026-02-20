@@ -415,7 +415,7 @@ const syncSeries = async (req, res) => {
     return res.status(409).json({ error: 'Sync already in progress' });
   }
 
-  const mode = req.body?.mode || 'delta';
+  const mode = req.body?.mode || 'new';
 
   // Set sync state and return immediately
   syncState.status = 'syncing';
@@ -433,7 +433,7 @@ const syncSeries = async (req, res) => {
       if (mode === 'full') {
         await runFullSync();
       } else {
-        await runDeltaSync();
+        await runNewSync();
       }
       syncState.status = 'idle';
       syncState.completedAt = new Date();
@@ -487,86 +487,45 @@ const runFullSync = async () => {
 };
 
 /**
- * Delta sync: only syncs series that have missing episodes (no file) in Sonarr.
- * Uses the /api/v3/wanted/missing endpoint with includeSeries=true.
+ * New sync: only syncs series that exist in Sonarr but not yet in AutoAnime.
  */
-const runDeltaSync = async () => {
-  // Fetch all missing episodes from Sonarr (paginated)
-  const allMissingEpisodes = [];
-  let page = 1;
-  const pageSize = 1000;
+const runNewSync = async () => {
+  const sonarrData = await sonarrService.getAllSeries();
 
-  while (true) {
-    const result = await sonarrService.getMissingEpisodes(page, pageSize);
-    if (result.records && result.records.length > 0) {
-      allMissingEpisodes.push(...result.records);
-    }
-    if (allMissingEpisodes.length >= result.totalRecords) break;
-    page++;
-  }
+  // Get all sonarr IDs already in our DB
+  const existingRows = await db.select({ sonarrId: series.sonarrId }).from(series);
+  const existingIds = new Set(existingRows.map(r => r.sonarrId));
 
-  if (allMissingEpisodes.length === 0) {
-    logger.info('Delta sync: no missing episodes found');
+  // Filter to only series not yet in DB
+  const newSeries = sonarrData.filter(item => !existingIds.has(item.id));
+
+  if (newSeries.length === 0) {
+    logger.info('New sync: no new series found');
     return;
   }
 
-  // Deduplicate series from the missing episode records
-  const seriesMap = new Map();
-  for (const ep of allMissingEpisodes) {
-    if (ep.series && !seriesMap.has(ep.series.id)) {
-      seriesMap.set(ep.series.id, ep.series);
-    }
-  }
-
-  syncState.progress.total = seriesMap.size;
+  syncState.progress.total = newSeries.length;
   const now = new Date();
 
-  // Upsert each affected series and its missing episodes
-  for (const [sonarrSeriesId, seriesItem] of seriesMap) {
-    // Upsert the series itself
-    const existing = await db.select().from(series).where(eq(series.sonarrId, sonarrSeriesId));
-    const seriesData = getSeriesCoreData(seriesItem, now);
+  for (const item of newSeries) {
+    const seriesData = getSeriesCoreData(item, now);
+    const result = await db.insert(series).values(seriesData).returning({ id: series.id });
+    const seriesId = result[0].id;
 
-    let dbSeriesId;
-    if (existing.length > 0) {
-      dbSeriesId = existing[0].id;
-      await db.update(series).set(seriesData).where(eq(series.id, dbSeriesId));
-    } else {
-      const result = await db.insert(series).values(seriesData).returning({ id: series.id });
-      dbSeriesId = result[0].id;
-    }
-
-    // Upsert metadata, images, alternate titles, and seasons
     await Promise.all([
-      upsertSeriesMetadata(dbSeriesId, seriesItem, now),
-      upsertSeriesImages(dbSeriesId, seriesItem.images, now),
-      upsertAlternateTitles(dbSeriesId, seriesItem.alternateTitles, now),
-      upsertSeasons(dbSeriesId, seriesItem.seasons, now)
+      upsertSeriesMetadata(seriesId, item, now),
+      upsertSeriesImages(seriesId, item.images, now),
+      upsertAlternateTitles(seriesId, item.alternateTitles, now),
+      upsertSeasons(seriesId, item.seasons, now)
     ]);
 
-    // Get season ID mappings for this series
-    const seasons = await db.select().from(seriesSeasons).where(eq(seriesSeasons.seriesId, dbSeriesId));
-    const seasonIdMap = {};
-    for (const season of seasons) {
-      seasonIdMap[season.seasonNumber] = season.id;
-    }
-
-    // Upsert the missing episodes for this series
-    const removedFileEpisodeIds = [];
-    const seriesMissingEpisodes = allMissingEpisodes.filter(ep => ep.seriesId === sonarrSeriesId);
-    for (const episode of seriesMissingEpisodes) {
-      const removedId = await upsertSingleEpisode(episode, dbSeriesId, seasonIdMap, now);
-      if (removedId) removedFileEpisodeIds.push(removedId);
-    }
-    await handleRemovedFileDownloads(removedFileEpisodeIds, sonarrSeriesId);
+    const { removedFileEpisodeIds } = await upsertEpisodes(seriesId, item.id, now);
+    await handleRemovedFileDownloads(removedFileEpisodeIds, item.id);
 
     syncState.progress.current++;
   }
 
-  logger.info({
-    seriesCount: seriesMap.size,
-    episodeCount: allMissingEpisodes.length
-  }, 'Delta sync complete');
+  logger.info({ seriesCount: newSeries.length }, 'New sync complete');
 };
 
 const triggerRefresh = async (req, res) => {

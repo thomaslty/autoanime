@@ -100,8 +100,8 @@ export function PosterBoard({ series = [], onSeriesClick, loading = false, synci
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onRefresh("delta")} disabled={syncing}>
-                Sync Delta
+              <DropdownMenuItem onClick={() => onRefresh("new")} disabled={syncing}>
+                Sync New
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onRefresh("full")} disabled={syncing}>
                 Sync All
