@@ -32,7 +32,7 @@ export function RssFilterDialog({
       setSeriesRssConfigId(initialSeriesConfigId || "none")
       setSeasonRssConfigs(initialSeasonConfigs || {})
     }
-  }, [open, initialSeriesConfigId, initialSeasonConfigs])
+  }, [open])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
