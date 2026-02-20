@@ -153,6 +153,53 @@ RSS configs use a simplified regex syntax (NOT standard regex), defined in `util
 - RSS → Sonarr: `actualEpisode = rssEpisode - offset`
 - Sonarr → RSS: `effectiveEpisode = sonarrEpisode + offset`
 
+## E2E Pipeline Test (Playwright)
+
+Full auto-download pipeline test in `frontend/test/e2e-pipeline.spec.js`. Tests run sequentially (`test.describe.serial()`) — each phase builds on the previous.
+
+**Prerequisites:** Docker stack running, all services healthy (PostgreSQL, Sonarr, qBittorrent), Sonarr has "Frieren: Beyond Journey's End" in library, Playwright installed.
+
+**Setup:**
+```bash
+docker compose down && docker compose up --build -d
+# Reset DB to clean state
+docker exec autoanime node scripts/db-reset.js --force
+docker exec autoanime node scripts/migrate.js
+```
+
+**Test phases (sequential):**
+
+| Phase | What it does |
+|-------|-------------|
+| 1. DB Verification | Confirm all tables exist and are empty after reset |
+| 2. Service Health | Sidebar shows 3 green connection indicators |
+| 3. Series Sync | Sync All from Sonarr, search for "Frieren" |
+| 4. RSS Source | Add dmhy RSS feed (`葬送的芙莉蓮 S2`), fetch items, verify non-empty |
+| 5. RSS Config | Add config with regex `[葬送的芙莉蓮 / Sousou no Frieren][:ep:][1080p][繁日雙語]`, offset 28, preview matches |
+| 6. Series RSS | Assign config to Frieren Season 2, verify matches, apply matches, enable auto-download |
+| 7. Download Monitor | Wait for scheduler to trigger downloads (120s timeout), monitor progress (300s timeout) |
+| 8. Download Verify | Check DB for download records, verify files in `./qbit_download/` and `./sonarr/media/` |
+
+**Key timeouts:**
+- Sonarr sync: 60s
+- RSS fetch: 30s
+- Download trigger: 120s
+- Torrent completion: 300s
+
+**Implementation notes:**
+- Tests must run in serial mode (state accumulates intentionally)
+- Use Postgres MCP `execute_sql` for independent DB verification
+- Use `waitForLoadState('networkidle')` and explicit `waitForSelector`/`waitForResponse` for async operations
+- Increase Playwright global timeout to 120s; per-test `test.setTimeout()` for download tests (300s)
+
+**Test file structure:**
+```
+frontend/test/
+├── e2e-pipeline.spec.js          # Full pipeline test (serial)
+├── settings-connection.spec.js   # Connection settings tests
+└── homepage-filters.spec.js      # Filter persistence tests
+```
+
 ## Dev Procedure
 
 After finishing coding, rebuild and test with Docker:
