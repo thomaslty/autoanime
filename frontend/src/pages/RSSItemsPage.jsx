@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { TruncatedCell } from "@/components/TruncatedCell"
 import { RssItemEditDialog } from "@/components/dialogs/RssItemEditDialog"
 
 export function RSSItemsPage() {
@@ -188,8 +189,14 @@ export function RSSItemsPage() {
                   {pagedItems.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="max-w-xs pl-4">
-                        <div className="font-medium truncate">{item.title || "-"}</div>
-                        {item.author && <div className="text-xs text-muted-foreground truncate">{item.author}</div>}
+                        <TruncatedCell className="font-medium" tooltip={item.title || "-"}>
+                          {item.title || "-"}
+                        </TruncatedCell>
+                        {item.author && (
+                          <TruncatedCell className="text-xs text-muted-foreground" tooltip={item.author}>
+                            {item.author}
+                          </TruncatedCell>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{item.category || "-"}</TableCell>
                       <TableCell className="text-muted-foreground">

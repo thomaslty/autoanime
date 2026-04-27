@@ -66,3 +66,4 @@ PLAN.md
 # playwright
 test-results/
 .playwright-mcp/
+frontend/test/screenshots/

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { TruncatedCell } from "@/components/TruncatedCell"
 
 const EMPTY_FORM = { name: "", description: "", regex: "", rssSourceId: "", offset: "", isEnabled: true }
 
@@ -229,7 +230,11 @@ export function RssConfigFormDialog({ open, onOpenChange, config, sources, onSav
                       <TableBody>
                         {preview.matched.map(item => (
                           <TableRow key={item.id}>
-                            <TableCell className="text-xs font-mono max-w-0 overflow-hidden text-ellipsis">{item.title}</TableCell>
+                            <TableCell className="max-w-0">
+                              <TruncatedCell className="text-xs font-mono" tooltip={item.title}>
+                                {item.title}
+                              </TruncatedCell>
+                            </TableCell>
                             <TableCell className="text-xs font-semibold text-right whitespace-nowrap">
                               {item.matchedEpisode || (
                                 <span className="text-muted-foreground">

@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { TruncatedCell } from "@/components/TruncatedCell"
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog"
 import { RssConfigFormDialog } from "@/components/dialogs/RssConfigFormDialog"
 
@@ -281,7 +282,11 @@ export function RSSAnimeConfigsPage() {
                         <div>{config.name}</div>
                         {config.description && <div className="text-xs text-muted-foreground">{config.description}</div>}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground">{config.regex}</TableCell>
+                      <TableCell className="max-w-xs">
+                        <TruncatedCell className="font-mono text-xs text-muted-foreground" tooltip={config.regex}>
+                          {config.regex}
+                        </TruncatedCell>
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{getSourceName(config.rssSourceId)}</TableCell>
                       <TableCell>
                         <Badge variant={config.isEnabled ? "default" : "secondary"}>

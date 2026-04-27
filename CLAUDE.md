@@ -207,6 +207,17 @@ After finishing coding, rebuild and test with Docker:
 docker compose down && docker compose up --build
 ```
 
+## Visual Verification & Screenshots
+
+Any UI/visual change must be visually confirmed before being marked complete. Type checks and tests prove code correctness, not feature correctness.
+
+- **Use Playwright in headless mode** to drive the app and exercise the changed flow.
+- **Take a screenshot for every meaningful action** (navigation, hover, dialog open, drag, etc.) and confirm the expected visual state in each.
+- **Save screenshots under `frontend/test/screenshots/`** — this directory is gitignored and must stay that way (do not commit screenshot output).
+- **Both bug fixes and new features require visual confirmation** — claiming "fixed" or "done" without a screenshot of the working state is not acceptable.
+- **If Claude cannot visually confirm** a screenshot (e.g. tooltip rendering quirks, asynchronous reflow timing), **ask the user to verify manually** before marking the task done.
+- Postgres MCP can be used for independent DB verification when the visual state depends on seeded data (the user maintains example RSS sources/configs in the dev DB).
+
 ## Access Points
 
 - App (Docker production): http://localhost:3000 (nginx serves frontend + proxies API)

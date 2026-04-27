@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { TruncatedCell } from "@/components/TruncatedCell"
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog"
 import { RssFeedFormDialog } from "@/components/dialogs/RssFeedFormDialog"
 
@@ -350,7 +351,11 @@ export function RSSSourcesPage() {
                         <div className="font-medium">{feed.name}</div>
                         {feed.description && <div className="text-xs text-muted-foreground">{feed.description}</div>}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate text-muted-foreground">{feed.url}</TableCell>
+                      <TableCell className="max-w-xs">
+                        <TruncatedCell className="text-muted-foreground" tooltip={feed.url}>
+                          {feed.url}
+                        </TruncatedCell>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline">{getTemplateName(feed.templateId)}</Badge>
                       </TableCell>

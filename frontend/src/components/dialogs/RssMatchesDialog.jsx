@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { TruncatedCell } from "@/components/TruncatedCell"
 
 export function RssMatchesDialog({ open, onOpenChange, seriesId, onRefreshSeries }) {
   const [previewData, setPreviewData] = useState([])
@@ -222,35 +222,25 @@ export function RssMatchesDialog({ open, onOpenChange, seriesId, onRefreshSeries
                         <TableRow key={index}>
                           <TableCell>S{item.seasonNumber}</TableCell>
                           <TableCell>E{item.episodeNumber}</TableCell>
-                          <TableCell className="max-w-md truncate">{item.episodeTitle || "-"}</TableCell>
-                          <TableCell className="max-w-md truncate">
+                          <TableCell className="max-w-md">
+                            <TruncatedCell tooltip={item.episodeTitle || "-"}>
+                              {item.episodeTitle || "-"}
+                            </TruncatedCell>
+                          </TableCell>
+                          <TableCell className="max-w-md">
                             {item.currentRssItemTitle ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help text-blue-600 truncate block">{item.currentRssItemTitle}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-xs">{item.currentRssItemTitle}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              <TruncatedCell className="text-blue-600" tooltip={item.currentRssItemTitle}>
+                                {item.currentRssItemTitle}
+                              </TruncatedCell>
                             ) : (
                               <span className="text-muted-foreground italic text-xs">None</span>
                             )}
                           </TableCell>
-                          <TableCell className="max-w-md truncate">
+                          <TableCell className="max-w-md">
                             {item.rssItemTitle ? (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-help text-green-600 truncate block">{item.rssItemTitle}</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="max-w-xs">{item.rssItemTitle}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              <TruncatedCell className="text-green-600" tooltip={item.rssItemTitle}>
+                                {item.rssItemTitle}
+                              </TruncatedCell>
                             ) : (
                               <span className="text-muted-foreground italic text-xs">No match</span>
                             )}
